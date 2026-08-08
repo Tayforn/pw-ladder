@@ -20,12 +20,12 @@ export default function Header({ onShowInfo }: { onShowInfo: () => void }) {
   return (
     <header className="site-header">
       <div className="container header-inner">
-        <span className="logo">
+        <a className="logo" href={import.meta.env.BASE_URL} title="На головну">
           <span className="logo-crest" aria-hidden="true">
             <img src={import.meta.env.BASE_URL + 'assets/favicon-180.png'} alt="" width={180} height={180} />
           </span>
           <span className="logo-text">Ладдер страждання</span>
-        </span>
+        </a>
 
         <div className="header-actions">
           <a

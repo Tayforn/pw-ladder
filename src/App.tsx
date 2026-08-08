@@ -24,6 +24,7 @@ import { useLadderGame, costFor } from './lib/ladderEngine';
 import { MAX_LEVEL, RATES, STONE_LABEL, type StoneMethod } from './data/refineRates';
 
 const NICK_KEY = 'ladder-nickname';
+const INFO_SEEN_KEY = 'ladder-info-seen';
 const DEFAULT_SETTINGS: LadderSettings = { pointsPerSuccess: 10, skyCost: 20, underCost: 20, worldCost: 10 };
 
 const STONES: Array<{ method: Exclude<StoneMethod, 'mirage'>; label: string; cls: string; failNote: string }> = [
@@ -47,7 +48,14 @@ export default function App() {
       return '';
     }
   });
-  const [showInfo, setShowInfo] = useState(!adminRoute);
+  const [showInfo, setShowInfo] = useState(() => {
+    if (adminRoute) return false;
+    try {
+      return !localStorage.getItem(INFO_SEEN_KEY);
+    } catch {
+      return true;
+    }
+  });
   const [settings, setSettings] = useState<LadderSettings>(DEFAULT_SETTINGS);
   const [ladder, setLadder] = useState<LadderEntry[]>([]);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
@@ -68,6 +76,7 @@ export default function App() {
   const startGame = (nick: string) => {
     try {
       localStorage.setItem(NICK_KEY, nick);
+      localStorage.setItem(INFO_SEEN_KEY, '1');
     } catch {
       /* ignore */
     }

@@ -19,14 +19,14 @@ export default function InfoPopup({
     <div className="modal-overlay">
       <div className="modal" role="dialog" aria-modal="true" style={{ width: 'min(520px, 100%)' }}>
         <div className="modal-head">
-          <h3>🔥 Ладдер страждання</h3>
-        </div>
-        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <img
             src={import.meta.env.BASE_URL + 'assets/thunder-hero.gif'}
             alt=""
-            style={{ width: '100%', maxHeight: 160, objectFit: 'cover', borderRadius: 'var(--radius-lg)' }}
+            style={{ width: 40, height: 'auto', flex: '0 0 auto', borderRadius: 'var(--radius)', filter: 'drop-shadow(0 4px 12px rgba(216, 31, 31, 0.5))' }}
           />
+          <h3 style={{ margin: 0 }}>Ладдер страждання</h3>
+        </div>
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <p style={{ margin: 0 }}>
             Заточуй міражем безкоштовно — кожен успіх дає бали. Не вистачає нервів чекати?
             Витрать зароблені бали на камінь-помічник: <b>Небеска</b> й <b>Підземка</b> коштують

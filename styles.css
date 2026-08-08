@@ -503,3 +503,119 @@ body.modal-open { overflow: hidden; }
 .modal-head h3 { margin: 0; font-size: 18px; }
 .modal-foot { border-top: 1px solid var(--line); flex-wrap: wrap; justify-content: flex-end; }
 .modal-body { padding: 20px 22px; overflow-y: auto; }
+
+/* ── Драматизація результату (Critical Enhancement Moments) ─────────── */
+.drama-tag, .moment-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.drama-significant { background: rgba(var(--warn-rgb), 0.16); color: var(--warn); }
+.drama-rare        { background: rgba(var(--accent-3-rgb), 0.18); color: var(--accent-3); }
+.drama-exceptional { background: rgba(var(--accent-3-rgb), 0.28); color: var(--accent-3); box-shadow: 0 0 0 1px rgba(var(--accent-3-rgb), 0.4); }
+.drama-major {
+  background: linear-gradient(90deg, rgba(var(--accent-3-rgb), 0.35), rgba(var(--bad-rgb), 0.25));
+  color: #fff;
+  box-shadow: 0 0 12px -2px rgba(var(--accent-3-rgb), 0.7);
+}
+.moment-tag { background: rgba(var(--good-rgb), 0.14); color: var(--good); }
+
+/* ── Фінальний екран забігу ───────────────────────────────────────────── */
+.result-modal { width: min(760px, 100%); }
+.result-card {
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(var(--accent-3-rgb), 0.07), rgba(138, 16, 16, 0.05));
+  border: 1px solid rgba(var(--accent-3-rgb), 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.result-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.result-nick { font-family: 'Grunt Grotesk', system-ui, sans-serif; font-weight: 700; font-size: 18px; }
+.result-primary-title {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, rgba(var(--accent-3-rgb), 0.3), rgba(var(--bad-rgb), 0.2));
+  color: #fff;
+  font-weight: 800;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: 0 0 14px -4px rgba(var(--accent-3-rgb), 0.7);
+}
+.result-level-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.result-level {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  font-size: 40px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.result-stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.result-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+}
+.result-stat-label { font-size: 10.5px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.04em; }
+.result-stat-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px; }
+.result-secondary-titles { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.rng-profile-grid { display: flex; flex-direction: column; gap: 6px; }
+.rng-profile-row { display: grid; grid-template-columns: 96px 1fr 30px; align-items: center; gap: 8px; }
+.rng-profile-label { font-size: 12px; color: var(--text-dim); }
+.rng-profile-bar { height: 8px; border-radius: var(--radius-pill); background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.rng-profile-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent-3)); }
+.rng-profile-value { font-family: 'JetBrains Mono', monospace; font-size: 12px; text-align: right; color: var(--text-dim); }
+
+.shame-section { margin-top: 18px; padding: 14px 16px; border-radius: var(--radius); background: rgba(255, 255, 255, 0.02); border: 1px dashed var(--line-2); }
+.shame-entry { font-size: 13.5px; color: var(--text-dim); padding: 5px 0; border-bottom: 1px dashed var(--line); }
+.shame-entry:last-child { border-bottom: none; }
+.shame-entry b { color: var(--accent-3); }
+
+/* ── Графік подорожі (History Graph) ─────────────────────────────────── */
+.history-graph { margin-top: 16px; }
+.history-graph-svg { width: 100%; height: 180px; display: block; }
+.history-grid-line { stroke: var(--line); stroke-width: 1; }
+.history-grid-label { font-size: 8px; fill: var(--text-mute); }
+.history-graph-path { stroke: var(--accent-3); stroke-width: 1.5; }
+.history-point.succ { fill: var(--good); }
+.history-point.fail { fill: var(--text-mute); }
+.history-point.drop { fill: var(--bad); }
+.history-marker { fill: none; stroke: var(--accent-3); stroke-width: 2; }
+.history-marker-sub { stroke: var(--warn); stroke-dasharray: 2; }
+
+@media (max-width: 640px) {
+  .result-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rng-profile-row { grid-template-columns: 80px 1fr 26px; }
+}
+
+/* ── Спецнагороди ладдера ─────────────────────────────────────────────── */
+.awards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.award-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+.award-label { font-size: 10.5px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.05em; }
+.award-nick { font-weight: 700; font-size: 15px; }
+.award-value { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--accent-3); }

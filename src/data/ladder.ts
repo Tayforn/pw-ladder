@@ -1,7 +1,8 @@
 // =========================================================
 // Шар даних Supabase для ладдера — той самий проєкт/allow-list, що
 // thunder-info (лише нові таблиці ladder_settings/ladder_entries,
-// див. supabase/migrations/0001_init.sql).
+// див. supabase/migrations/0001_init.sql, 0002_attempts.sql,
+// 0003_stats.sql).
 // =========================================================
 
 import { supabase } from '../app/supabaseClient';
@@ -13,7 +14,20 @@ export interface LadderSettings {
   worldCost: number;
 }
 
-export interface LadderEntry {
+/** Розширена статистика ОДНОГО (найкращого) забігу гравця — потрібна для
+ * спецнагород лідерборду (Best Streak, Luckiest Run тощо) і не впливає на
+ * основне ранжування (рівень → спроби). */
+export interface LadderStats {
+  bestStreak: number;
+  worstStreak: number;
+  biggestDrop: number;
+  biggestComeback: number;
+  successRate: number;
+  peakAttempt: number;
+  luckScore: number;
+}
+
+export interface LadderEntry extends LadderStats {
   nickname: string;
   level: number;
   attempts: number;
@@ -33,6 +47,13 @@ interface EntryRow {
   attempts: number;
   points: number;
   updated_at: string;
+  best_streak: number;
+  worst_streak: number;
+  biggest_drop: number;
+  biggest_comeback: number;
+  success_rate: number;
+  peak_attempt: number;
+  luck_score: number;
 }
 
 const settingsFromRow = (r: SettingsRow): LadderSettings => ({
@@ -47,6 +68,22 @@ const entryFromRow = (r: EntryRow): LadderEntry => ({
   attempts: r.attempts,
   points: r.points,
   updatedAt: r.updated_at,
+  bestStreak: r.best_streak,
+  worstStreak: r.worst_streak,
+  biggestDrop: r.biggest_drop,
+  biggestComeback: r.biggest_comeback,
+  successRate: r.success_rate,
+  peakAttempt: r.peak_attempt,
+  luckScore: r.luck_score,
+});
+const statsToRow = (s: LadderStats) => ({
+  best_streak: s.bestStreak,
+  worst_streak: s.worstStreak,
+  biggest_drop: s.biggestDrop,
+  biggest_comeback: s.biggestComeback,
+  success_rate: s.successRate,
+  peak_attempt: s.peakAttempt,
+  luck_score: s.luckScore,
 });
 
 export async function fetchSettings(): Promise<LadderSettings> {
@@ -69,9 +106,9 @@ export async function updateSettings(patch: Partial<LadderSettings>): Promise<vo
  * однакових рівнів — за НАЙМЕНШОЮ кількістю спроб (бали можна нескінченно
  * накрутити просто клікаючи міраж, спроби так просто не підробиш — вони й
  * так відображають витрачені бали/камені: дорожчий/ризикованіший шлях до
- * того самого рівня — це саме БІЛЬШЕ спроб, не менше). */
-/** limit не задано — повний список (потрібен адмінці для об'єднання
- * записів поза топ-10, які публічна таблиця вже не показує). */
+ * того самого рівня — це саме БІЛЬШЕ спроб, не менше).
+ * limit не задано — повний список (потрібен адмінці для об'єднання записів
+ * поза топ-10, і для підрахунку спецнагород по всій історії ладдера). */
 export async function fetchLadder(limit?: number): Promise<LadderEntry[]> {
   let query = supabase
     .from('ladder_entries')
@@ -86,7 +123,13 @@ export async function fetchLadder(limit?: number): Promise<LadderEntry[]> {
 
 /** "Кращий" = вищий рівень; за однакового рівня — менше спроб. Вносить лише
  * якщо результат кращий за вже наявний запис цього ніка. */
-export async function submitIfBetter(nickname: string, level: number, attempts: number, points: number): Promise<{ submitted: boolean }> {
+export async function submitIfBetter(
+  nickname: string,
+  level: number,
+  attempts: number,
+  points: number,
+  stats: LadderStats,
+): Promise<{ submitted: boolean }> {
   const { data: existing, error: selErr } = await supabase
     .from('ladder_entries')
     .select('level, attempts')
@@ -101,7 +144,7 @@ export async function submitIfBetter(nickname: string, level: number, attempts: 
 
   const { error } = await supabase
     .from('ladder_entries')
-    .upsert({ nickname, level, attempts, points, updated_at: new Date().toISOString() }, { onConflict: 'nickname' });
+    .upsert({ nickname, level, attempts, points, updated_at: new Date().toISOString(), ...statsToRow(stats) }, { onConflict: 'nickname' });
   if (error) throw error;
   return { submitted: true };
 }
@@ -127,7 +170,20 @@ export async function mergeLadderEntries(nicknames: string[], targetNickname: st
   const { error: upsertErr } = await supabase
     .from('ladder_entries')
     .upsert(
-      { nickname: target, level: best.level, attempts: best.attempts, points: best.points, updated_at: new Date().toISOString() },
+      {
+        nickname: target,
+        level: best.level,
+        attempts: best.attempts,
+        points: best.points,
+        updated_at: new Date().toISOString(),
+        best_streak: best.best_streak,
+        worst_streak: best.worst_streak,
+        biggest_drop: best.biggest_drop,
+        biggest_comeback: best.biggest_comeback,
+        success_rate: best.success_rate,
+        peak_attempt: best.peak_attempt,
+        luck_score: best.luck_score,
+      },
       { onConflict: 'nickname' },
     );
   if (upsertErr) throw upsertErr;

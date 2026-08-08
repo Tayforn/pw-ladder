@@ -1,7 +1,7 @@
 // =========================================================
 // Ладдер страждання — уся гра на одній сторінці: попап з правилами/ніком,
 // симулятор заточки міражами (+ 3 платних камені), таблиця лідерів,
-// внесення результату.
+// внесення результату, фінальний екран забігу (титули/статистика/графік).
 //
 // Адмінка — ОКРЕМИЙ вигляд цієї ж сторінки, доступний лише прямим заходом
 // на /admin (ніякого видимого лінка з головної) — просто client-side
@@ -13,18 +13,26 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import InfoPopup from './components/InfoPopup';
 import LadderTable from './components/LadderTable';
+import AwardsSection from './components/AwardsSection';
 import AdminGate from './components/AdminGate';
 import AdminPanel from './components/AdminPanel';
+import FinalResultScreen from './components/FinalResultScreen';
 import { reportError } from './app/errorMessage';
 import {
   fetchLadder, fetchSettings, submitIfBetter, subscribeLadderChanges,
-  type LadderEntry, type LadderSettings,
+  type LadderEntry, type LadderSettings, type LadderStats,
 } from './data/ladder';
-import { useLadderGame, costFor, MAX_ATTEMPTS } from './lib/ladderEngine';
+import { useLadderGame, costFor, MAX_ATTEMPTS, type AttemptResult } from './lib/ladderEngine';
 import { MAX_LEVEL, RATES, STONE_LABEL, type StoneMethod } from './data/refineRates';
+import { LABEL_TEXT, TIER_LABEL } from './lib/criticalMoments';
+import { computeSessionStats, type SessionStats } from './lib/sessionStats';
+import { computeRngProfile, type RngProfile } from './lib/rngProfile';
+import { evaluateTitles, type TitleResult } from './lib/titles';
+import { buildHallOfShame, type ShameEntry } from './lib/hallOfShame';
 
 const NICK_KEY = 'ladder-nickname';
 const INFO_SEEN_KEY = 'ladder-info-seen';
+const LADDER_SECTION_ID = 'ladder-section';
 const DEFAULT_SETTINGS: LadderSettings = { pointsPerSuccess: 10, skyCost: 20, underCost: 20, worldCost: 10 };
 
 const STONES: Array<{ method: Exclude<StoneMethod, 'mirage'>; label: string; cls: string; failNote: string }> = [
@@ -33,10 +41,31 @@ const STONES: Array<{ method: Exclude<StoneMethod, 'mirage'>; label: string; cls
   { method: 'world', label: 'Світобудова', cls: 'world', failNote: 'провал → без змін' },
 ];
 
+interface FinalResult {
+  history: AttemptResult[];
+  stats: SessionStats;
+  profile: RngProfile;
+  titles: { qualified: TitleResult[]; primary: TitleResult | null };
+  shame: ShameEntry[];
+  submitMsg: string;
+}
+
 function isAdminPath(): boolean {
   const base = import.meta.env.BASE_URL;
   const path = window.location.pathname.replace(/\/+$/, '');
   return path === (base + 'admin').replace(/\/+$/, '');
+}
+
+function statsToLadderStats(stats: SessionStats, profile: RngProfile): LadderStats {
+  return {
+    bestStreak: stats.longestSuccessStreak,
+    worstStreak: stats.longestFailStreak,
+    biggestDrop: stats.biggestDrop,
+    biggestComeback: stats.biggestComeback,
+    successRate: stats.successRate,
+    peakAttempt: stats.peakAttempt,
+    luckScore: profile.luck,
+  };
 }
 
 export default function App() {
@@ -58,7 +87,7 @@ export default function App() {
   });
   const [settings, setSettings] = useState<LadderSettings>(DEFAULT_SETTINGS);
   const [ladder, setLadder] = useState<LadderEntry[]>([]);
-  const [submitMsg, setSubmitMsg] = useState<string | null>(null);
+  const [finalResult, setFinalResult] = useState<FinalResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const game = useLadderGame(settings);
@@ -87,27 +116,39 @@ export default function App() {
 
   const doSubmit = async (auto: boolean) => {
     if (!nickname) return;
+    // Знімок ДО скидання — фінальний екран показує саме цей забіг.
+    const history = game.state.history;
+    const stats = computeSessionStats(history);
+    const profile = computeRngProfile(history, stats);
+    const currentRecordLevel = ladder[0]?.level ?? null;
+    const titles = evaluateTitles(history, stats, profile, currentRecordLevel);
+    const shame = buildHallOfShame(history, stats);
+
     setSubmitting(true);
-    if (!auto) setSubmitMsg(null);
     try {
-      const { submitted } = await submitIfBetter(nickname, game.state.level, game.state.attempts, game.state.points);
-      game.reset();
-      setSubmitMsg(
-        auto
-          ? submitted
-            ? `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано — результат внесено в ладдер автоматично. Лічильники скинуто.`
-            : `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано — попередній результат у ладдері був кращий, цей не зараховано. Лічильники скинуто.`
-          : submitted
-            ? 'Результат внесено в ладдер! Лічильники скинуто — можна починати заново.'
-            : 'Твій попередній результат у ладдері був кращий — цей не зараховано.',
+      const { submitted } = await submitIfBetter(
+        nickname, game.state.level, game.state.attempts, game.state.points,
+        statsToLadderStats(stats, profile),
       );
+      game.reset();
+      const submitMsg = auto
+        ? submitted
+          ? `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано — результат внесено в ладдер автоматично.`
+          : `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано — попередній результат у ладдері був кращий, цей не зараховано.`
+        : submitted
+          ? 'Результат внесено в ладдер!'
+          : 'Твій попередній результат у ладдері був кращий — цей не зараховано.';
+      setFinalResult({ history, stats, profile, titles, shame, submitMsg });
     } catch (e) {
       if (auto) {
         // Ліміт спроб вичерпано — скидаємо прогрес НАВІТЬ якщо внесення в
         // ладдер не вдалося (напр. мережева помилка): застрягти назавжди
         // на 200/200 (кнопки задизейблені) гірше, ніж втратити результат.
         game.reset();
-        setSubmitMsg(`Ліміт спроб (${MAX_ATTEMPTS}) вичерпано, але внести результат у ладдер не вдалося. Лічильники все одно скинуто — спробуй ще раз.`);
+        setFinalResult({
+          history, stats, profile, titles, shame,
+          submitMsg: `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано, але внести результат у ладдер не вдалося. Лічильники все одно скинуто.`,
+        });
       } else {
         reportError(e);
       }
@@ -118,9 +159,8 @@ export default function App() {
 
   // Ліміт "забігу" вичерпано (200 спроб) — вносимо поточний результат
   // (якщо кращий за наявний) і скидаємо прогрес автоматично, без участі
-  // гравця. Ефект спрацьовує рівно раз на кожне досягнення ліміту: поки
-  // triggeredRef не скинутий (game.reset() у doSubmit обнулить attempts),
-  // attempts не змінюється під час await — повторного виклику не буде.
+  // гравця. attempts не змінюється під час await (game.reset() робить це
+  // лише після), тож ефект не спрацює вдруге поки триває цей виклик.
   useEffect(() => {
     if (!adminRoute && nickname && game.state.attempts >= MAX_ATTEMPTS) {
       doSubmit(true);
@@ -135,6 +175,7 @@ export default function App() {
   const attemptsExhausted = game.state.attempts >= MAX_ATTEMPTS;
   const mirageRate = atMax ? null : RATES.mirage[nextLevel];
   const mirageDisabled = atMax || attemptsExhausted || !mirageRate;
+  const lastAttempt = game.state.history[game.state.history.length - 1];
 
   if (adminRoute) {
     return (
@@ -189,19 +230,20 @@ export default function App() {
                 <span className="sim-level-target">Спроб: {game.state.attempts} / {MAX_ATTEMPTS}</span>
               </div>
               <div className="sim-last">
-                {game.state.history.length === 0 ? (
+                {!lastAttempt ? (
                   'Тисни «Заточити міражем», щоб зробити спробу.'
                 ) : (
-                  (() => {
-                    const h = game.state.history[0];
-                    return (
-                      <>
-                        Останнє: <span className={'badge ' + h.method}>{STONE_LABEL[h.method]}</span>{' '}
-                        {h.success ? <span className="succ">✓ успіх</span> : <span className="fail">✗ провал</span>}
-                        {' · +'}{h.before} → +{h.after}
-                      </>
-                    );
-                  })()
+                  <>
+                    Останнє: <span className={'badge ' + lastAttempt.method}>{STONE_LABEL[lastAttempt.method]}</span>{' '}
+                    {lastAttempt.success ? <span className="succ">✓ успіх</span> : <span className="fail">✗ провал</span>}
+                    {' · +'}{lastAttempt.before} → +{lastAttempt.after}
+                    {lastAttempt.tier !== 'normal' && (
+                      <span className={'drama-tag drama-' + lastAttempt.tier}>{TIER_LABEL[lastAttempt.tier]}</span>
+                    )}
+                    {lastAttempt.labels.map((l) => (
+                      <span key={l} className="moment-tag">{LABEL_TEXT[l]}</span>
+                    ))}
+                  </>
                 )}
               </div>
             </div>
@@ -248,7 +290,6 @@ export default function App() {
               </button>
               <button type="button" className="btn btn-ghost" onClick={() => game.reset()}>↺ Скинути прогрес</button>
             </div>
-            {submitMsg && <p className="hint" style={{ marginTop: 10 }}>{submitMsg}</p>}
 
             {game.state.history.length > 0 && (
               <div className="sim-history">
@@ -256,8 +297,8 @@ export default function App() {
                   <h3 style={{ margin: 0 }}>Історія спроб</h3>
                 </div>
                 <div className="sim-history-list">
-                  {game.state.history.map((h, i) => (
-                    <div key={i} className={'hist-row ' + (h.success ? 'succ' : 'fail')}>
+                  {[...game.state.history].reverse().map((h, i) => (
+                    <div key={game.state.history.length - i} className={'hist-row ' + (h.success ? 'succ' : 'fail')}>
                       <span className={'badge ' + h.method}>{STONE_LABEL[h.method]}</span>
                       <span className="hist-mid">+{h.before} → +{h.after}</span>
                       <span className={'hist-mark ' + (h.success ? 'succ' : 'fail')}>{h.success ? '✓' : '✗'}</span>
@@ -268,14 +309,32 @@ export default function App() {
             )}
           </div>
 
-          <h3 style={{ marginTop: 28 }}>Ладдер · Топ 10</h3>
+          <h3 id={LADDER_SECTION_ID} style={{ marginTop: 28 }}>Ладдер · Топ 10</h3>
           <div className="card">
             <LadderTable entries={ladder} nickname={nickname} />
           </div>
+
+          <AwardsSection />
         </main>
       </div>
       <Footer />
       {showInfo && <InfoPopup nickname={nickname} onStart={startGame} />}
+      {finalResult && (
+        <FinalResultScreen
+          nickname={nickname}
+          history={finalResult.history}
+          stats={finalResult.stats}
+          profile={finalResult.profile}
+          titles={finalResult.titles}
+          shame={finalResult.shame}
+          submitMsg={finalResult.submitMsg}
+          onTryAgain={() => setFinalResult(null)}
+          onViewLeaderboard={() => {
+            setFinalResult(null);
+            document.getElementById(LADDER_SECTION_ID)?.scrollIntoView({ behavior: 'smooth' });
+          }}
+        />
+      )}
     </>
   );
 }

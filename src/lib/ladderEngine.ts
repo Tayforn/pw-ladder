@@ -11,20 +11,23 @@
 // MAX_ATTEMPTS — ліміт на "забіг" (усі 4 кнопки разом): після 200-ї спроби
 // подальші клікі блокуються, App.tsx сам вносить поточний результат у
 // ладдер і скидає прогрес (див. useEffect там).
+//
+// Історія зберігається ХРОНОЛОГІЧНО (найстаріша спроба — перша) і НЕ
+// обрізається: природний ліміт — MAX_ATTEMPTS, тож масив ніколи не
+// перевищує 200 записів. Це та сама "complete immutable attempt history",
+// з якої похідні модулі (sessionStats/rngProfile/titles/hallOfShame)
+// рахують усе інше, не чіпаючи сам кидок RNG.
 // =========================================================
 
 import { useCallback, useState } from 'react';
 import { MAX_LEVEL, RATES, type StoneMethod } from '../data/refineRates';
 import type { LadderSettings } from '../data/ladder';
+import { labelsFor, tierFor } from './criticalMoments';
+import type { AttemptResult } from './types';
 
 export const MAX_ATTEMPTS = 200;
 
-export interface AttemptResult {
-  method: StoneMethod;
-  success: boolean;
-  before: number;
-  after: number;
-}
+export type { AttemptResult };
 
 export interface LadderGameState {
   level: number;
@@ -32,8 +35,6 @@ export interface LadderGameState {
   attempts: number;
   history: AttemptResult[];
 }
-
-const HISTORY_MAX = 50;
 
 export function costFor(method: StoneMethod, settings: LadderSettings): number {
   if (method === 'mirage') return 0;
@@ -75,8 +76,9 @@ export function useLadderGame(settings: LadderSettings) {
           level = 0; // mirage / sky
         }
 
-        const record: AttemptResult = { method, success, before, after: level };
-        return { level, points, attempts: s.attempts + 1, history: [record, ...s.history].slice(0, HISTORY_MAX) };
+        const raw = { method, success, before, after: level, p };
+        const record: AttemptResult = { ...raw, tier: tierFor(before), labels: labelsFor(raw, s.history) };
+        return { level, points, attempts: s.attempts + 1, history: [...s.history, record] };
       });
     },
     [settings],

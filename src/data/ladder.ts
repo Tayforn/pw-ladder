@@ -16,6 +16,7 @@ export interface LadderSettings {
 export interface LadderEntry {
   nickname: string;
   level: number;
+  attempts: number;
   points: number;
   updatedAt: string;
 }
@@ -29,6 +30,7 @@ interface SettingsRow {
 interface EntryRow {
   nickname: string;
   level: number;
+  attempts: number;
   points: number;
   updated_at: string;
 }
@@ -42,6 +44,7 @@ const settingsFromRow = (r: SettingsRow): LadderSettings => ({
 const entryFromRow = (r: EntryRow): LadderEntry => ({
   nickname: r.nickname,
   level: r.level,
+  attempts: r.attempts,
   points: r.points,
   updatedAt: r.updated_at,
 });
@@ -62,26 +65,39 @@ export async function updateSettings(patch: Partial<LadderSettings>): Promise<vo
   if (error) throw error;
 }
 
+/** Рейтинг: перш за все за рівнем заточки (головне досягнення), а серед
+ * однакових рівнів — за НАЙМЕНШОЮ кількістю спроб (бали можна нескінченно
+ * накрутити просто клікаючи міраж, спроби так просто не підробиш — вони й
+ * так відображають витрачені бали/камені: дорожчий/ризикованіший шлях до
+ * того самого рівня — це саме БІЛЬШЕ спроб, не менше). */
 export async function fetchLadder(): Promise<LadderEntry[]> {
-  const { data, error } = await supabase.from('ladder_entries').select('*').order('points', { ascending: false });
+  const { data, error } = await supabase
+    .from('ladder_entries')
+    .select('*')
+    .order('level', { ascending: false })
+    .order('attempts', { ascending: true });
   if (error) throw error;
   return (data as EntryRow[]).map(entryFromRow);
 }
 
-/** Вносить результат у ладдер лише якщо він кращий (більше балів) за вже
- * наявний запис цього ніка — інакше нічого не пише. */
-export async function submitIfBetter(nickname: string, level: number, points: number): Promise<{ submitted: boolean }> {
+/** "Кращий" = вищий рівень; за однакового рівня — менше спроб. Вносить лише
+ * якщо результат кращий за вже наявний запис цього ніка. */
+export async function submitIfBetter(nickname: string, level: number, attempts: number, points: number): Promise<{ submitted: boolean }> {
   const { data: existing, error: selErr } = await supabase
     .from('ladder_entries')
-    .select('points')
+    .select('level, attempts')
     .eq('nickname', nickname)
     .maybeSingle();
   if (selErr) throw selErr;
-  if (existing && (existing as { points: number }).points >= points) return { submitted: false };
+  if (existing) {
+    const e = existing as { level: number; attempts: number };
+    const better = level > e.level || (level === e.level && attempts < e.attempts);
+    if (!better) return { submitted: false };
+  }
 
   const { error } = await supabase
     .from('ladder_entries')
-    .upsert({ nickname, level, points, updated_at: new Date().toISOString() }, { onConflict: 'nickname' });
+    .upsert({ nickname, level, attempts, points, updated_at: new Date().toISOString() }, { onConflict: 'nickname' });
   if (error) throw error;
   return { submitted: true };
 }
@@ -89,6 +105,34 @@ export async function submitIfBetter(nickname: string, level: number, points: nu
 export async function resetLadder(): Promise<void> {
   const { error } = await supabase.from('ladder_entries').delete().neq('nickname', '');
   if (error) throw error;
+}
+
+/** Об'єднує 2+ записи ладдера в один (напр. гравець змінив нік у грі) —
+ * лишається найкращий результат серед вибраних (той самий критерій, що й
+ * рейтинг: вищий рівень, далі менше спроб), решта видаляється. */
+export async function mergeLadderEntries(nicknames: string[], targetNickname: string): Promise<void> {
+  if (nicknames.length < 2) throw new Error('Потрібно обрати щонайменше 2 записи для об’єднання.');
+  const { data, error } = await supabase.from('ladder_entries').select('*').in('nickname', nicknames);
+  if (error) throw error;
+  const rows = data as EntryRow[];
+  if (rows.length === 0) return;
+
+  const best = rows.reduce((a, b) => (b.level > a.level || (b.level === a.level && b.attempts < a.attempts) ? b : a));
+  const target = targetNickname.trim() || best.nickname;
+
+  const { error: upsertErr } = await supabase
+    .from('ladder_entries')
+    .upsert(
+      { nickname: target, level: best.level, attempts: best.attempts, points: best.points, updated_at: new Date().toISOString() },
+      { onConflict: 'nickname' },
+    );
+  if (upsertErr) throw upsertErr;
+
+  const toDelete = nicknames.filter((n) => n !== target);
+  if (toDelete.length > 0) {
+    const { error: delErr } = await supabase.from('ladder_entries').delete().in('nickname', toDelete);
+    if (delErr) throw delErr;
+  }
 }
 
 let subscriberSeq = 0;

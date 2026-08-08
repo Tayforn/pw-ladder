@@ -23,6 +23,7 @@ export interface AttemptResult {
 export interface LadderGameState {
   level: number;
   points: number;
+  attempts: number;
   history: AttemptResult[];
 }
 
@@ -36,7 +37,7 @@ export function costFor(method: StoneMethod, settings: LadderSettings): number {
 }
 
 export function useLadderGame(settings: LadderSettings) {
-  const [state, setState] = useState<LadderGameState>({ level: 0, points: 0, history: [] });
+  const [state, setState] = useState<LadderGameState>({ level: 0, points: 0, attempts: 0, history: [] });
 
   const canUse = useCallback(
     (method: StoneMethod) => state.level < MAX_LEVEL && state.points >= costFor(method, settings),
@@ -69,13 +70,13 @@ export function useLadderGame(settings: LadderSettings) {
         }
 
         const record: AttemptResult = { method, success, before, after: level };
-        return { level, points, history: [record, ...s.history].slice(0, HISTORY_MAX) };
+        return { level, points, attempts: s.attempts + 1, history: [record, ...s.history].slice(0, HISTORY_MAX) };
       });
     },
     [settings],
   );
 
-  const reset = useCallback(() => setState({ level: 0, points: 0, history: [] }), []);
+  const reset = useCallback(() => setState({ level: 0, points: 0, attempts: 0, history: [] }), []);
 
   return { state, attempt, canUse, reset };
 }

@@ -1,17 +1,18 @@
 // =========================================================
 // Адмін-панель: редагування балів (успіх / вартість Небески-Підземки-
-// Світобудови) і обнулення ладдера. Рендериться всередині AdminGate.
+// Світобудови), об'єднання записів ладдера (гравець змінив нік) і
+// обнулення ладдера цілком.
 // =========================================================
 
 import { useEffect, useState } from 'react';
-import { reportError } from '../app/errorMessage';
-import { resetLadder, updateSettings, type LadderSettings } from '../data/ladder';
+import { errorMessage, reportError } from '../app/errorMessage';
+import { mergeLadderEntries, resetLadder, updateSettings, type LadderEntry, type LadderSettings } from '../data/ladder';
 
 function NumberField({ label, value, onSave }: { label: string; value: number; onSave: (v: number) => void }) {
   const [v, setV] = useState(String(value));
   useEffect(() => setV(String(value)), [value]);
   return (
-    <label className="field" style={{ flex: '1 1 160px' }}>
+    <label className="field admin-field">
       <span>{label}</span>
       <input
         type="number"
@@ -27,14 +28,82 @@ function NumberField({ label, value, onSave }: { label: string; value: number; o
   );
 }
 
+function MergeSection({ entries, onMerged }: { entries: LadderEntry[]; onMerged: () => void }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [target, setTarget] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const toggle = (nick: string) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(nick)) next.delete(nick);
+      else next.add(nick);
+      return next;
+    });
+
+  const selList = [...selected];
+
+  const merge = async () => {
+    if (selList.length < 2) return;
+    const finalTarget = target.trim() || selList[0];
+    if (!confirm(`Об'єднати записи «${selList.join('», «')}» в один під ніком «${finalTarget}»? Інші записи буде видалено — незворотно.`)) return;
+    setBusy(true);
+    try {
+      await mergeLadderEntries(selList, finalTarget);
+      setSelected(new Set());
+      setTarget('');
+      onMerged();
+    } catch (e) {
+      alert(errorMessage(e, "Не вдалося об'єднати записи."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <h3 style={{ marginBottom: 6 }}>Об'єднати учасників</h3>
+      <p className="hint" style={{ marginBottom: 12 }}>
+        Познач 2+ ніки одного гравця (напр. змінив нік у грі) — залишиться один запис із кращим результатом.
+      </p>
+      <div className="card" style={{ padding: 0, maxHeight: 260, overflowY: 'auto' }}>
+        {entries.map((e) => (
+          <label
+            key={e.nickname}
+            className="checkbox-row"
+            style={{ padding: '9px 16px', borderBottom: '1px solid var(--line)', justifyContent: 'flex-start' }}
+          >
+            <input type="checkbox" checked={selected.has(e.nickname)} onChange={() => toggle(e.nickname)} />
+            <span style={{ fontWeight: 600 }}>{e.nickname}</span>
+            <span className="hint" style={{ margin: 0 }}>+{e.level} · {e.attempts} спроб · {e.points} балів</span>
+          </label>
+        ))}
+      </div>
+      {selList.length >= 2 && (
+        <div className="field-row" style={{ marginTop: 12, alignItems: 'flex-end' }}>
+          <label className="field" style={{ flex: '1 1 220px' }}>
+            <span>Залишити під ніком</span>
+            <input type="text" placeholder={selList[0]} value={target} onChange={(ev) => setTarget(ev.target.value)} />
+          </label>
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={merge}>Об'єднати</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminPanel({
   settings,
+  entries,
   onSettingsChanged,
-  onLadderReset,
+  onLadderChanged,
 }: {
   settings: LadderSettings;
+  entries: LadderEntry[];
   onSettingsChanged: () => void;
-  onLadderReset: () => void;
+  onLadderChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -46,14 +115,14 @@ export default function AdminPanel({
   const doReset = () => {
     if (!confirm('Обнулити весь ладдер? Усі записи гравців буде видалено — дію не можна скасувати.')) return;
     setBusy(true);
-    resetLadder().then(onLadderReset).catch(reportError).finally(() => setBusy(false));
+    resetLadder().then(onLadderChanged).catch(reportError).finally(() => setBusy(false));
   };
 
   return (
-    <div className="card" style={{ marginTop: 20 }}>
-      <h3 style={{ marginTop: 0 }}>Адмін-панель</h3>
-      <div className="field-row">
-        <NumberField label="Балів за успішну заточку міражем" value={settings.pointsPerSuccess} onSave={(v) => save({ pointsPerSuccess: v })} />
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>Налаштування балів</h3>
+      <div className="field-row admin-field-row">
+        <NumberField label="Балів за успіх (міраж)" value={settings.pointsPerSuccess} onSave={(v) => save({ pointsPerSuccess: v })} />
         <NumberField label="Вартість «Небеска»" value={settings.skyCost} onSave={(v) => save({ skyCost: v })} />
         <NumberField label="Вартість «Підземка»" value={settings.underCost} onSave={(v) => save({ underCost: v })} />
         <NumberField label="Вартість «Світобудова»" value={settings.worldCost} onSave={(v) => save({ worldCost: v })} />
@@ -61,6 +130,8 @@ export default function AdminPanel({
       <button type="button" className="btn btn-bad" disabled={busy} onClick={doReset} style={{ marginTop: 16 }}>
         Обнулити ладдер
       </button>
+
+      <MergeSection entries={entries} onMerged={onLadderChanged} />
     </div>
   );
 }

@@ -1,6 +1,9 @@
 // =========================================================
 // Шапка сайту — спрощена (без бургер-меню/сайдбару, сторінка одна):
-// лого, перехресні іконки на pw-calc/pw-pvp, тема.
+// лого, перехресні іконки на pw-calc/pw-pvp (з підписом — сама іконка
+// малоінформативна), тема. Усе, крім лого, згруповано в один блок, що
+// переноситься ЦІЛІСНО на мобільних — інакше окрема іконка лишається
+// самотньою на своєму рядку.
 // =========================================================
 
 function toggleTheme(): void {
@@ -23,37 +26,40 @@ export default function Header({ onShowInfo }: { onShowInfo: () => void }) {
           </span>
           <span className="logo-text">Ладдер страждання</span>
         </span>
-        <a
-          href="https://tayforn.github.io/pw.calc/refine"
-          target="_blank"
-          rel="noopener"
-          className="partner-logo"
-          title="PW Хелпер — калькулятори"
-        >
-          <img src={import.meta.env.BASE_URL + 'assets/pwcalc-icon.png'} alt="PW Хелпер" />
-        </a>
-        <a
-          href="https://tayforn.github.io/pw-pvp/"
-          target="_blank"
-          rel="noopener"
-          className="partner-logo partner-logo-alt"
-          title="PW PvP — турніри сервера"
-        >
-          <img src={import.meta.env.BASE_URL + 'assets/pwpvp-icon.png'} alt="PW PvP" />
-        </a>
-        <div className="header-meta">
+
+        <div className="header-actions">
+          <a
+            href="https://tayforn.github.io/pw.calc/refine"
+            target="_blank"
+            rel="noopener"
+            className="partner-logo"
+            title="PW Хелпер — калькулятори"
+          >
+            <img src={import.meta.env.BASE_URL + 'assets/pwcalc-icon.png'} alt="" />
+            <span className="partner-logo-text">Хелпер</span>
+          </a>
+          <a
+            href="https://tayforn.github.io/pw-pvp/"
+            target="_blank"
+            rel="noopener"
+            className="partner-logo partner-logo-alt"
+            title="PW PvP — турніри сервера"
+          >
+            <img src={import.meta.env.BASE_URL + 'assets/pwpvp-icon.png'} alt="" />
+            <span className="partner-logo-text">PvP</span>
+          </a>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onShowInfo}>Правила</button>
+          <button
+            type="button"
+            className="theme-toggle"
+            aria-label="Перемкнути тему"
+            title="Світла / темна тема"
+            onClick={toggleTheme}
+          >
+            <span className="theme-ico-sun" aria-hidden="true">☀</span>
+            <span className="theme-ico-moon" aria-hidden="true">☾</span>
+          </button>
         </div>
-        <button
-          type="button"
-          className="theme-toggle"
-          aria-label="Перемкнути тему"
-          title="Світла / темна тема"
-          onClick={toggleTheme}
-        >
-          <span className="theme-ico-sun" aria-hidden="true">☀</span>
-          <span className="theme-ico-moon" aria-hidden="true">☾</span>
-        </button>
       </div>
     </header>
   );

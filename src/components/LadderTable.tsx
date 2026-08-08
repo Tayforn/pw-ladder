@@ -16,6 +16,7 @@ export default function LadderTable({ entries, nickname }: { entries: LadderEntr
             <th>#</th>
             <th>Нік</th>
             <th className="num">Рівень</th>
+            <th className="num">Спроб</th>
             <th className="num">Бали</th>
           </tr>
         </thead>
@@ -25,7 +26,8 @@ export default function LadderTable({ entries, nickname }: { entries: LadderEntr
               <td>{i + 1}</td>
               <td>{e.nickname}</td>
               <td className="num">+{e.level}</td>
-              <td className="num">{e.points}</td>
+              <td className="num">{e.attempts}</td>
+              <td className="num"><span className="muted">{e.points}</span></td>
             </tr>
           ))}
         </tbody>

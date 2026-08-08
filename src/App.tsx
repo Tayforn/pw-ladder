@@ -1,7 +1,11 @@
 // =========================================================
 // Ладдер страждання — уся гра на одній сторінці: попап з правилами/ніком,
 // симулятор заточки міражами (+ 3 платних камені), таблиця лідерів,
-// внесення результату, адмін-панель (за логіном).
+// внесення результату.
+//
+// Адмінка — ОКРЕМИЙ вигляд цієї ж сторінки, доступний лише прямим заходом
+// на /admin (ніякого видимого лінка з головної) — просто client-side
+// перевірка шляху, без роутера: сайт як був однопторінковим, так і лишився.
 // =========================================================
 
 import { useEffect, useState } from 'react';
@@ -22,14 +26,20 @@ import { MAX_LEVEL, RATES, STONE_LABEL, type StoneMethod } from './data/refineRa
 const NICK_KEY = 'ladder-nickname';
 const DEFAULT_SETTINGS: LadderSettings = { pointsPerSuccess: 10, skyCost: 20, underCost: 20, worldCost: 10 };
 
-const STONES: Array<{ method: StoneMethod; label: string; cls: string; failNote: string; free: boolean }> = [
-  { method: 'mirage', label: 'Заточити міражем', cls: 'mirage', failNote: 'провал → рівень 0', free: true },
-  { method: 'sky', label: 'Юзнути Небеску', cls: 'sky', failNote: 'провал → рівень 0', free: false },
-  { method: 'under', label: 'Юзнути Підземку', cls: 'under', failNote: 'провал → −1', free: false },
-  { method: 'world', label: 'Юзнути Світобудову', cls: 'world', failNote: 'провал → без змін', free: false },
+const STONES: Array<{ method: Exclude<StoneMethod, 'mirage'>; label: string; cls: string; failNote: string }> = [
+  { method: 'sky', label: 'Небеска', cls: 'sky', failNote: 'провал → рівень 0' },
+  { method: 'under', label: 'Підземка', cls: 'under', failNote: 'провал → −1' },
+  { method: 'world', label: 'Світобудова', cls: 'world', failNote: 'провал → без змін' },
 ];
 
+function isAdminPath(): boolean {
+  const base = import.meta.env.BASE_URL;
+  const path = window.location.pathname.replace(/\/+$/, '');
+  return path === (base + 'admin').replace(/\/+$/, '');
+}
+
 export default function App() {
+  const [adminRoute] = useState(isAdminPath);
   const [nickname, setNickname] = useState(() => {
     try {
       return localStorage.getItem(NICK_KEY) ?? '';
@@ -37,10 +47,9 @@ export default function App() {
       return '';
     }
   });
-  const [showInfo, setShowInfo] = useState(true);
+  const [showInfo, setShowInfo] = useState(!adminRoute);
   const [settings, setSettings] = useState<LadderSettings>(DEFAULT_SETTINGS);
   const [ladder, setLadder] = useState<LadderEntry[]>([]);
-  const [adminOpen, setAdminOpen] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -50,10 +59,10 @@ export default function App() {
     fetchSettings().then(setSettings).catch(reportError);
   }, []);
 
+  const reloadLadder = () => fetchLadder().then(setLadder).catch(reportError);
   useEffect(() => {
-    const reload = () => fetchLadder().then(setLadder).catch(reportError);
-    reload();
-    return subscribeLadderChanges(reload);
+    reloadLadder();
+    return subscribeLadderChanges(reloadLadder);
   }, []);
 
   const startGame = (nick: string) => {
@@ -67,11 +76,11 @@ export default function App() {
   };
 
   const submit = async () => {
-    if (!nickname || game.state.points <= 0) return;
+    if (!nickname || game.state.attempts <= 0) return;
     setSubmitting(true);
     setSubmitMsg(null);
     try {
-      const { submitted } = await submitIfBetter(nickname, game.state.level, game.state.points);
+      const { submitted } = await submitIfBetter(nickname, game.state.level, game.state.attempts, game.state.points);
       if (submitted) {
         game.reset();
         setSubmitMsg('Результат внесено в ладдер! Лічильники скинуто — можна починати заново.');
@@ -87,6 +96,39 @@ export default function App() {
 
   const nextLevel = game.state.level + 1;
   const atMax = game.state.level >= MAX_LEVEL;
+  const mirageRate = atMax ? null : RATES.mirage[nextLevel];
+  const mirageDisabled = atMax || !mirageRate;
+
+  if (adminRoute) {
+    return (
+      <>
+        <Header onShowInfo={() => {}} />
+        <div className="app-shell container">
+          <main style={{ width: '100%' }}>
+            <header className="section-head">
+              <span className="eyebrow">Ладдер страждання</span>
+              <h2>Адмін-панель</h2>
+            </header>
+            <AdminGate>
+              {() => (
+                <AdminPanel
+                  settings={settings}
+                  entries={ladder}
+                  onSettingsChanged={() => fetchSettings().then(setSettings).catch(reportError)}
+                  onLadderChanged={reloadLadder}
+                />
+              )}
+            </AdminGate>
+            <h3 style={{ marginTop: 28 }}>Ладдер (поточний стан)</h3>
+            <div className="card">
+              <LadderTable entries={ladder} nickname="" />
+            </div>
+          </main>
+        </div>
+        <Footer />
+      </>
+    );
+  }
 
   return (
     <>
@@ -107,10 +149,11 @@ export default function App() {
               </div>
               <div className="sim-target-info">
                 <span className="sim-level-target">Балів: {game.state.points}</span>
+                <span className="sim-level-target">Спроб: {game.state.attempts}</span>
               </div>
               <div className="sim-last">
                 {game.state.history.length === 0 ? (
-                  'Тисни на камінець, щоб зробити спробу.'
+                  'Тисни «Заточити міражем», щоб зробити спробу.'
                 ) : (
                   (() => {
                     const h = game.state.history[0];
@@ -126,6 +169,16 @@ export default function App() {
               </div>
             </div>
 
+            <button
+              type="button"
+              className="btn btn-primary btn-lg sim-mirage-btn"
+              disabled={mirageDisabled}
+              onClick={() => game.attempt('mirage')}
+            >
+              ⚒ Заточити міражем
+              <span className="sim-mirage-rate">{mirageRate ? (mirageRate * 100).toFixed(2) + '%' : '—'}</span>
+            </button>
+
             <div className="sim-stones-row">
               <div className="sim-stones">
                 {STONES.map((st) => {
@@ -136,13 +189,13 @@ export default function App() {
                     <button
                       key={st.method}
                       type="button"
-                      className="stone-btn"
+                      className="stone-btn stone-btn-sm"
                       disabled={disabled}
                       onClick={() => game.attempt(st.method)}
                     >
                       <span className={'badge ' + st.cls}>{st.label}</span>
                       <span className="stone-rate">{rate ? (rate * 100).toFixed(2) + '%' : '—'}</span>
-                      <span className="stone-price">{st.free ? 'безкоштовно' : cost + ' балів'}</span>
+                      <span className="stone-price">{cost} балів</span>
                       <span className="stone-meta">{st.failNote}</span>
                     </button>
                   );
@@ -153,7 +206,7 @@ export default function App() {
             {atMax && <div className="banner" style={{ marginTop: 14 }}><b>+{MAX_LEVEL}</b> — максимальний рівень досягнуто!</div>}
 
             <div className="sim-actions">
-              <button type="button" className="btn btn-primary" disabled={submitting || !nickname || game.state.points <= 0} onClick={submit}>
+              <button type="button" className="btn btn-primary" disabled={submitting || !nickname || game.state.attempts <= 0} onClick={submit}>
                 Внести в ладдер
               </button>
               <button type="button" className="btn btn-ghost" onClick={() => game.reset()}>↺ Скинути прогрес</button>
@@ -181,23 +234,6 @@ export default function App() {
           <h3 style={{ marginTop: 28 }}>Ладдер</h3>
           <div className="card">
             <LadderTable entries={ladder} nickname={nickname} />
-          </div>
-
-          <div style={{ marginTop: 24 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAdminOpen((v) => !v)}>
-              {adminOpen ? 'Сховати адмінку' : 'Адмін'}
-            </button>
-            {adminOpen && (
-              <AdminGate>
-                {() => (
-                  <AdminPanel
-                    settings={settings}
-                    onSettingsChanged={() => fetchSettings().then(setSettings).catch(reportError)}
-                    onLadderReset={() => fetchLadder().then(setLadder).catch(reportError)}
-                  />
-                )}
-              </AdminGate>
-            )}
           </div>
         </main>
       </div>

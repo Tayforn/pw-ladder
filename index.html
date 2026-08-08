@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ладдер страждання — заточка міражами</title>
+  <meta name="description" content="Ладдер страждання: симулятор заточки міражами, гра на бали, публічний рейтинг гравців." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Ладдер страждання" />
+  <meta property="og:title" content="Ладдер страждання — заточка міражами" />
+  <meta property="og:description" content="Симулятор заточки міражами, гра на бали, публічний рейтинг гравців." />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Ладдер страждання — заточка міражами" />
+  <meta name="twitter:description" content="Симулятор заточки міражами, гра на бали, публічний рейтинг гравців." />
+  <script>
+    document.documentElement.setAttribute(
+      'data-theme',
+      localStorage.getItem('ladder-theme') === 'light' ? 'light' : 'dark'
+    );
+  </script>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="180x180" href="assets/favicon-180.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon-180.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

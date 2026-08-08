@@ -154,6 +154,13 @@ export async function resetLadder(): Promise<void> {
   if (error) throw error;
 }
 
+/** Видаляє ОДНОГО учасника з ладдера (стирає його результат/статистику
+ * повністю) — напр. фейковий/тестовий нік чи прохання гравця. */
+export async function deleteLadderEntry(nickname: string): Promise<void> {
+  const { error } = await supabase.from('ladder_entries').delete().eq('nickname', nickname);
+  if (error) throw error;
+}
+
 /** Об'єднує 2+ записи ладдера в один (напр. гравець змінив нік у грі) —
  * лишається найкращий результат серед вибраних (той самий критерій, що й
  * рейтинг: вищий рівень, далі менше спроб), решта видаляється. */

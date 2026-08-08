@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import { errorMessage, reportError } from '../app/errorMessage';
-import { mergeLadderEntries, resetLadder, updateSettings, type LadderEntry, type LadderSettings } from '../data/ladder';
+import { deleteLadderEntry, mergeLadderEntries, resetLadder, updateSettings, type LadderEntry, type LadderSettings } from '../data/ladder';
 
 function NumberField({ label, value, onSave }: { label: string; value: number; onSave: (v: number) => void }) {
   const [v, setV] = useState(String(value));
@@ -28,7 +28,7 @@ function NumberField({ label, value, onSave }: { label: string; value: number; o
   );
 }
 
-function MergeSection({ entries, onMerged }: { entries: LadderEntry[]; onMerged: () => void }) {
+function ParticipantsSection({ entries, onChanged }: { entries: LadderEntry[]; onChanged: () => void }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [target, setTarget] = useState('');
   const [busy, setBusy] = useState(false);
@@ -52,9 +52,27 @@ function MergeSection({ entries, onMerged }: { entries: LadderEntry[]; onMerged:
       await mergeLadderEntries(selList, finalTarget);
       setSelected(new Set());
       setTarget('');
-      onMerged();
+      onChanged();
     } catch (e) {
       alert(errorMessage(e, "Не вдалося об'єднати записи."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (nickname: string) => {
+    if (!confirm(`Видалити «${nickname}» з ладдера? Весь його результат/статистика зникнуть — дію не можна скасувати.`)) return;
+    setBusy(true);
+    try {
+      await deleteLadderEntry(nickname);
+      setSelected((s) => {
+        const next = new Set(s);
+        next.delete(nickname);
+        return next;
+      });
+      onChanged();
+    } catch (e) {
+      alert(errorMessage(e, 'Не вдалося видалити учасника.'));
     } finally {
       setBusy(false);
     }
@@ -64,21 +82,37 @@ function MergeSection({ entries, onMerged }: { entries: LadderEntry[]; onMerged:
 
   return (
     <div style={{ marginTop: 24 }}>
-      <h3 style={{ marginBottom: 6 }}>Об'єднати учасників</h3>
+      <h3 style={{ marginBottom: 6 }}>Учасники ладдера</h3>
       <p className="hint" style={{ marginBottom: 12 }}>
-        Познач 2+ ніки одного гравця (напр. змінив нік у грі) — залишиться один запис із кращим результатом.
+        Познач 2+ ніки одного гравця (напр. змінив нік у грі), щоб об'єднати в один запис із кращим результатом.
+        «✕» видаляє учасника з ладдера повністю.
       </p>
-      <div className="card" style={{ padding: 0, maxHeight: 260, overflowY: 'auto' }}>
+      <div className="card" style={{ padding: 0, maxHeight: 320, overflowY: 'auto' }}>
         {entries.map((e) => (
-          <label
+          <div
             key={e.nickname}
-            className="checkbox-row"
-            style={{ padding: '9px 16px', borderBottom: '1px solid var(--line)', justifyContent: 'flex-start' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 16px', borderBottom: '1px solid var(--line)' }}
           >
-            <input type="checkbox" checked={selected.has(e.nickname)} onChange={() => toggle(e.nickname)} />
+            <input
+              type="checkbox"
+              checked={selected.has(e.nickname)}
+              disabled={busy}
+              onChange={() => toggle(e.nickname)}
+              style={{ accentColor: 'var(--accent)', width: 17, height: 17, cursor: 'pointer', flex: '0 0 auto' }}
+            />
             <span style={{ fontWeight: 600 }}>{e.nickname}</span>
             <span className="hint" style={{ margin: 0 }}>+{e.level} · {e.attempts} спроб · {e.points} балів</span>
-          </label>
+            <button
+              type="button"
+              className="btn btn-bad btn-sm"
+              disabled={busy}
+              style={{ marginLeft: 'auto', padding: '3px 9px' }}
+              title={`Видалити «${e.nickname}»`}
+              onClick={() => remove(e.nickname)}
+            >
+              ✕
+            </button>
+          </div>
         ))}
       </div>
       {selList.length >= 2 && (
@@ -131,7 +165,7 @@ export default function AdminPanel({
         Обнулити ладдер
       </button>
 
-      <MergeSection entries={entries} onMerged={onLadderChanged} />
+      <ParticipantsSection entries={entries} onChanged={onLadderChanged} />
     </div>
   );
 }

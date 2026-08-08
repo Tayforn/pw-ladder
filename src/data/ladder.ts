@@ -70,12 +70,16 @@ export async function updateSettings(patch: Partial<LadderSettings>): Promise<vo
  * накрутити просто клікаючи міраж, спроби так просто не підробиш — вони й
  * так відображають витрачені бали/камені: дорожчий/ризикованіший шлях до
  * того самого рівня — це саме БІЛЬШЕ спроб, не менше). */
-export async function fetchLadder(): Promise<LadderEntry[]> {
-  const { data, error } = await supabase
+/** limit не задано — повний список (потрібен адмінці для об'єднання
+ * записів поза топ-10, які публічна таблиця вже не показує). */
+export async function fetchLadder(limit?: number): Promise<LadderEntry[]> {
+  let query = supabase
     .from('ladder_entries')
     .select('*')
     .order('level', { ascending: false })
     .order('attempts', { ascending: true });
+  if (limit) query = query.limit(limit);
+  const { data, error } = await query;
   if (error) throw error;
   return (data as EntryRow[]).map(entryFromRow);
 }

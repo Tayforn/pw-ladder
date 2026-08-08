@@ -7,11 +7,17 @@
 // Провал: world — рівень лишається; under — рівень -1; mirage/sky — рівень
 // скидається на 0. Успіх завжди дає +pointsPerSuccess (і, крім mirage,
 // коштує балів наперед — списується незалежно від результату).
+//
+// MAX_ATTEMPTS — ліміт на "забіг" (усі 4 кнопки разом): після 200-ї спроби
+// подальші клікі блокуються, App.tsx сам вносить поточний результат у
+// ладдер і скидає прогрес (див. useEffect там).
 // =========================================================
 
 import { useCallback, useState } from 'react';
 import { MAX_LEVEL, RATES, type StoneMethod } from '../data/refineRates';
 import type { LadderSettings } from '../data/ladder';
+
+export const MAX_ATTEMPTS = 200;
 
 export interface AttemptResult {
   method: StoneMethod;
@@ -40,14 +46,14 @@ export function useLadderGame(settings: LadderSettings) {
   const [state, setState] = useState<LadderGameState>({ level: 0, points: 0, attempts: 0, history: [] });
 
   const canUse = useCallback(
-    (method: StoneMethod) => state.level < MAX_LEVEL && state.points >= costFor(method, settings),
-    [state.level, state.points, settings],
+    (method: StoneMethod) => state.level < MAX_LEVEL && state.attempts < MAX_ATTEMPTS && state.points >= costFor(method, settings),
+    [state.level, state.attempts, state.points, settings],
   );
 
   const attempt = useCallback(
     (method: StoneMethod) => {
       setState((s) => {
-        if (s.level >= MAX_LEVEL) return s;
+        if (s.level >= MAX_LEVEL || s.attempts >= MAX_ATTEMPTS) return s;
         const cost = costFor(method, settings);
         if (s.points < cost) return s;
         const p = RATES[method][s.level + 1];

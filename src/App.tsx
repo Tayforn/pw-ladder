@@ -20,7 +20,7 @@ import {
   fetchLadder, fetchSettings, submitIfBetter, subscribeLadderChanges,
   type LadderEntry, type LadderSettings,
 } from './data/ladder';
-import { useLadderGame, costFor } from './lib/ladderEngine';
+import { useLadderGame, costFor, MAX_ATTEMPTS } from './lib/ladderEngine';
 import { MAX_LEVEL, RATES, STONE_LABEL, type StoneMethod } from './data/refineRates';
 
 const NICK_KEY = 'ladder-nickname';
@@ -67,10 +67,11 @@ export default function App() {
     fetchSettings().then(setSettings).catch(reportError);
   }, []);
 
-  const reloadLadder = () => fetchLadder().then(setLadder).catch(reportError);
+  const reloadLadder = () => fetchLadder(adminRoute ? undefined : 10).then(setLadder).catch(reportError);
   useEffect(() => {
     reloadLadder();
     return subscribeLadderChanges(reloadLadder);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const startGame = (nick: string) => {
@@ -84,29 +85,56 @@ export default function App() {
     setShowInfo(false);
   };
 
-  const submit = async () => {
-    if (!nickname || game.state.attempts <= 0) return;
+  const doSubmit = async (auto: boolean) => {
+    if (!nickname) return;
     setSubmitting(true);
-    setSubmitMsg(null);
+    if (!auto) setSubmitMsg(null);
     try {
       const { submitted } = await submitIfBetter(nickname, game.state.level, game.state.attempts, game.state.points);
-      if (submitted) {
-        game.reset();
-        setSubmitMsg('Результат внесено в ладдер! Лічильники скинуто — можна починати заново.');
-      } else {
-        setSubmitMsg('Твій попередній результат у ладдері був кращий — цей не зараховано.');
-      }
+      game.reset();
+      setSubmitMsg(
+        auto
+          ? submitted
+            ? `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано — результат внесено в ладдер автоматично. Лічильники скинуто.`
+            : `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано — попередній результат у ладдері був кращий, цей не зараховано. Лічильники скинуто.`
+          : submitted
+            ? 'Результат внесено в ладдер! Лічильники скинуто — можна починати заново.'
+            : 'Твій попередній результат у ладдері був кращий — цей не зараховано.',
+      );
     } catch (e) {
-      reportError(e);
+      if (auto) {
+        // Ліміт спроб вичерпано — скидаємо прогрес НАВІТЬ якщо внесення в
+        // ладдер не вдалося (напр. мережева помилка): застрягти назавжди
+        // на 200/200 (кнопки задизейблені) гірше, ніж втратити результат.
+        game.reset();
+        setSubmitMsg(`Ліміт спроб (${MAX_ATTEMPTS}) вичерпано, але внести результат у ладдер не вдалося. Лічильники все одно скинуто — спробуй ще раз.`);
+      } else {
+        reportError(e);
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
+  // Ліміт "забігу" вичерпано (200 спроб) — вносимо поточний результат
+  // (якщо кращий за наявний) і скидаємо прогрес автоматично, без участі
+  // гравця. Ефект спрацьовує рівно раз на кожне досягнення ліміту: поки
+  // triggeredRef не скинутий (game.reset() у doSubmit обнулить attempts),
+  // attempts не змінюється під час await — повторного виклику не буде.
+  useEffect(() => {
+    if (!adminRoute && nickname && game.state.attempts >= MAX_ATTEMPTS) {
+      doSubmit(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.state.attempts]);
+
+  const submit = () => doSubmit(false);
+
   const nextLevel = game.state.level + 1;
   const atMax = game.state.level >= MAX_LEVEL;
+  const attemptsExhausted = game.state.attempts >= MAX_ATTEMPTS;
   const mirageRate = atMax ? null : RATES.mirage[nextLevel];
-  const mirageDisabled = atMax || !mirageRate;
+  const mirageDisabled = atMax || attemptsExhausted || !mirageRate;
 
   if (adminRoute) {
     return (
@@ -158,7 +186,7 @@ export default function App() {
               </div>
               <div className="sim-target-info">
                 <span className="sim-level-target">Балів: {game.state.points}</span>
-                <span className="sim-level-target">Спроб: {game.state.attempts}</span>
+                <span className="sim-level-target">Спроб: {game.state.attempts} / {MAX_ATTEMPTS}</span>
               </div>
               <div className="sim-last">
                 {game.state.history.length === 0 ? (
@@ -240,7 +268,7 @@ export default function App() {
             )}
           </div>
 
-          <h3 style={{ marginTop: 28 }}>Ладдер</h3>
+          <h3 style={{ marginTop: 28 }}>Ладдер · Топ 10</h3>
           <div className="card">
             <LadderTable entries={ladder} nickname={nickname} />
           </div>

@@ -257,7 +257,7 @@ export default function App() {
               disabled={mirageDisabled}
               onClick={() => game.attempt('mirage')}
             >
-              ⚒ Заточити
+              ⚒ Заточити (міраж)
               <span className="sim-mirage-rate">{mirageRate ? (mirageRate * 100).toFixed(2) + '%' : '—'}</span>
             </button>
 

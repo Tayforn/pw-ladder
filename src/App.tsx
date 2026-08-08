@@ -33,6 +33,9 @@ import { buildHallOfShame, type ShameEntry } from './lib/hallOfShame';
 const NICK_KEY = 'ladder-nickname';
 const INFO_SEEN_KEY = 'ladder-info-seen';
 const LADDER_SECTION_ID = 'ladder-section';
+/** "Скинути прогрес" розблоковується лише після 150 спроб — щоб не можна
+ * було дешево перекидати невдалий старт забігу. */
+const MIN_ATTEMPTS_FOR_RESET = 150;
 const DEFAULT_SETTINGS: LadderSettings = { pointsPerSuccess: 10, skyCost: 20, underCost: 20, worldCost: 10 };
 
 const STONES: Array<{ method: Exclude<StoneMethod, 'mirage'>; label: string; cls: string; failNote: string }> = [
@@ -231,7 +234,7 @@ export default function App() {
               </div>
               <div className="sim-last">
                 {!lastAttempt ? (
-                  'Тисни «Заточити міражем», щоб зробити спробу.'
+                  'Тисни «Заточити», щоб зробити спробу.'
                 ) : (
                   <>
                     Останнє: <span className={'badge ' + lastAttempt.method}>{STONE_LABEL[lastAttempt.method]}</span>{' '}
@@ -254,7 +257,7 @@ export default function App() {
               disabled={mirageDisabled}
               onClick={() => game.attempt('mirage')}
             >
-              ⚒ Заточити міражем
+              ⚒ Заточити
               <span className="sim-mirage-rate">{mirageRate ? (mirageRate * 100).toFixed(2) + '%' : '—'}</span>
             </button>
 
@@ -288,7 +291,19 @@ export default function App() {
               <button type="button" className="btn btn-primary" disabled={submitting || !nickname || game.state.attempts <= 0} onClick={submit}>
                 Внести в ладдер
               </button>
-              <button type="button" className="btn btn-ghost" onClick={() => game.reset()}>↺ Скинути прогрес</button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={game.state.attempts < MIN_ATTEMPTS_FOR_RESET}
+                title={
+                  game.state.attempts < MIN_ATTEMPTS_FOR_RESET
+                    ? `Доступно після ${MIN_ATTEMPTS_FOR_RESET} спроб (лишилось ${MIN_ATTEMPTS_FOR_RESET - game.state.attempts})`
+                    : undefined
+                }
+                onClick={() => game.reset()}
+              >
+                ↺ Скинути прогрес
+              </button>
             </div>
 
             {game.state.history.length > 0 && (

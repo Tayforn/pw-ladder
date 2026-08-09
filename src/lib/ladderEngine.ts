@@ -19,7 +19,7 @@
 // рахують усе інше, не чіпаючи сам кидок RNG.
 // =========================================================
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { MAX_LEVEL, RATES, type StoneMethod } from '../data/refineRates';
 import type { LadderSettings } from '../data/ladder';
 import { labelsFor, tierFor } from './criticalMoments';
@@ -36,6 +36,28 @@ export interface LadderGameState {
   history: AttemptResult[];
 }
 
+const EMPTY_STATE: LadderGameState = { level: 0, points: 0, attempts: 0, history: [] };
+/** Поточний забіг переживає перезавантаження сторінки — інакше "скинути
+ * прогрес можна лише після 150 спроб" обходиться банальним F5. */
+const PROGRESS_KEY = 'ladder-progress';
+
+function loadProgress(): LadderGameState {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY);
+    if (!raw) return EMPTY_STATE;
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed?.level === 'number' && typeof parsed?.points === 'number' &&
+      typeof parsed?.attempts === 'number' && Array.isArray(parsed?.history)
+    ) {
+      return parsed as LadderGameState;
+    }
+  } catch {
+    /* ignore — пошкоджені/старі дані, починаємо заново */
+  }
+  return EMPTY_STATE;
+}
+
 export function costFor(method: StoneMethod, settings: LadderSettings): number {
   if (method === 'mirage') return 0;
   if (method === 'sky') return settings.skyCost;
@@ -44,7 +66,15 @@ export function costFor(method: StoneMethod, settings: LadderSettings): number {
 }
 
 export function useLadderGame(settings: LadderSettings) {
-  const [state, setState] = useState<LadderGameState>({ level: 0, points: 0, attempts: 0, history: [] });
+  const [state, setState] = useState<LadderGameState>(loadProgress);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify(state));
+    } catch {
+      /* ignore */
+    }
+  }, [state]);
 
   const canUse = useCallback(
     (method: StoneMethod) => state.level < MAX_LEVEL && state.attempts < MAX_ATTEMPTS && state.points >= costFor(method, settings),
@@ -84,7 +114,7 @@ export function useLadderGame(settings: LadderSettings) {
     [settings],
   );
 
-  const reset = useCallback(() => setState({ level: 0, points: 0, attempts: 0, history: [] }), []);
+  const reset = useCallback(() => setState(EMPTY_STATE), []);
 
   return { state, attempt, canUse, reset };
 }

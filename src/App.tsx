@@ -13,6 +13,7 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import InfoPopup from './components/InfoPopup';
 import LadderTable from './components/LadderTable';
+import PrizeTable from './components/PrizeTable';
 import AwardsSection from './components/AwardsSection';
 import AdminGate from './components/AdminGate';
 import AdminPanel from './components/AdminPanel';
@@ -325,6 +326,8 @@ export default function App() {
           <div className="card">
             <LadderTable entries={ladder} nickname={nickname} />
           </div>
+
+          <PrizeTable />
 
           <AwardsSection />
         </main>

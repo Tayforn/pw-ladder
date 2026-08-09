@@ -318,14 +318,23 @@ export default function App() {
             {atMax && <div className="banner" style={{ marginTop: 14 }}><b>+{MAX_LEVEL}</b> — максимальний рівень досягнуто!</div>}
 
             <div className="sim-actions">
-              <button type="button" className="btn btn-primary" disabled={submitting || !nickname || game.state.attempts <= 0} onClick={submit}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={submitting || !nickname || game.state.attempts <= 0}
+                onClick={() => {
+                  if (confirm(`Внести поточний результат (+${game.state.level}, ${game.state.attempts} спроб) у ладдер? Лічильники скинуться незалежно від результату.`)) submit();
+                }}
+              >
                 Внести в ладдер
               </button>
               <button
                 type="button"
                 className="btn btn-ghost"
                 disabled={game.state.attempts < MIN_ATTEMPTS_FOR_RESET}
-                onClick={() => game.reset()}
+                onClick={() => {
+                  if (confirm('Скинути прогрес без внесення в ладдер? Поточний результат буде втрачено назавжди.')) game.reset();
+                }}
               >
                 {game.state.attempts < MIN_ATTEMPTS_FOR_RESET
                   ? (() => {

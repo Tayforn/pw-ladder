@@ -183,7 +183,7 @@ export default function App() {
   if (adminRoute) {
     return (
       <>
-        <Header onShowInfo={() => {}} />
+        <Header />
         <div className="app-shell container">
           <main style={{ width: '100%' }}>
             <header className="section-head">

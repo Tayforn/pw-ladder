@@ -16,7 +16,7 @@ function toggleTheme(): void {
   }
 }
 
-export default function Header({ onShowInfo }: { onShowInfo: () => void }) {
+export default function Header({ onShowInfo }: { onShowInfo?: () => void }) {
   return (
     <header className="site-header">
       <div className="container header-inner">
@@ -48,7 +48,7 @@ export default function Header({ onShowInfo }: { onShowInfo: () => void }) {
             <img src={import.meta.env.BASE_URL + 'assets/pwpvp-icon.png'} alt="" />
             <span className="partner-logo-text">PvP</span>
           </a>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onShowInfo}>Правила</button>
+          {onShowInfo && <button type="button" className="btn btn-ghost btn-sm" onClick={onShowInfo}>Правила</button>}
           <button
             type="button"
             className="theme-toggle"

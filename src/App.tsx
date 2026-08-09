@@ -18,7 +18,7 @@ import AwardsSection from './components/AwardsSection';
 import AdminGate from './components/AdminGate';
 import AdminPanel from './components/AdminPanel';
 import FinalResultScreen from './components/FinalResultScreen';
-import { reportError } from './app/errorMessage';
+import { reportError, errorMessage } from './app/errorMessage';
 import {
   fetchLadder, fetchSettings, submitIfBetter, subscribeLadderChanges,
   type LadderEntry, type LadderSettings, type LadderStats,
@@ -30,6 +30,7 @@ import { computeSessionStats, type SessionStats } from './lib/sessionStats';
 import { computeRngProfile, type RngProfile } from './lib/rngProfile';
 import { evaluateTitles, type TitleResult } from './lib/titles';
 import { buildHallOfShame, type ShameEntry } from './lib/hallOfShame';
+import { isValidationRejection, bustedJokeFor, type BustedJoke } from './lib/cheatBusted';
 
 const NICK_KEY = 'ladder-nickname';
 const INFO_SEEN_KEY = 'ladder-info-seen';
@@ -62,6 +63,9 @@ interface FinalResult {
   titles: { qualified: TitleResult[]; primary: TitleResult | null };
   shame: ShameEntry[];
   submitMsg: string;
+  /** Заповнено лише якщо сервер відхилив сабміт як несумісний із чесною
+   * грою (0005_history_validation.sql) — у чесній грі це не спрацьовує. */
+  busted?: BustedJoke;
 }
 
 function isAdminPath(): boolean {
@@ -143,7 +147,7 @@ export default function App() {
     try {
       const { submitted } = await submitIfBetter(
         nickname, game.state.level, game.state.attempts, game.state.points,
-        statsToLadderStats(stats, profile),
+        statsToLadderStats(stats, profile), history,
       );
       game.reset();
       const submitMsg = auto
@@ -155,6 +159,8 @@ export default function App() {
           : 'Твій попередній результат у ладдері був кращий — цей не зараховано.';
       setFinalResult({ history, stats, profile, titles, shame, submitMsg });
     } catch (e) {
+      const msg = errorMessage(e, '');
+      const busted = isValidationRejection(msg) ? bustedJokeFor(msg) : undefined;
       if (auto) {
         // Ліміт спроб вичерпано — скидаємо прогрес НАВІТЬ якщо внесення в
         // ладдер не вдалося (напр. мережева помилка): застрягти назавжди
@@ -162,7 +168,16 @@ export default function App() {
         game.reset();
         setFinalResult({
           history, stats, profile, titles, shame,
-          submitMsg: `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано, але внести результат у ладдер не вдалося. Лічильники все одно скинуто.`,
+          submitMsg: busted
+            ? `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано, але сервер відхилив результат як несумісний із чесною грою.`
+            : `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано, але внести результат у ладдер не вдалося. Лічильники все одно скинуто.`,
+          busted,
+        });
+      } else if (busted) {
+        setFinalResult({
+          history, stats, profile, titles, shame,
+          submitMsg: 'Результат НЕ внесено в ладдер — сервер відхилив дані як несумісні з чесною грою.',
+          busted,
         });
       } else {
         reportError(e);
@@ -359,6 +374,7 @@ export default function App() {
           titles={finalResult.titles}
           shame={finalResult.shame}
           submitMsg={finalResult.submitMsg}
+          busted={finalResult.busted}
           onTryAgain={() => setFinalResult(null)}
           onViewLeaderboard={() => {
             setFinalResult(null);

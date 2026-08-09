@@ -1,5 +1,5 @@
 // =========================================================
-// 15 детермінованих титулів — оцінюються з готової історії забігу
+// 18 детермінованих титулів — оцінюються з готової історії забігу
 // (AttemptResult[]) + похідної статистики/RNG-профілю. Нічого тут не
 // впливає на сам кидок RNG, лише читає готовий результат.
 //
@@ -7,6 +7,7 @@
 // пізніше, подивившись на реальні забіги гравців.
 // =========================================================
 
+import { MAX_LEVEL } from '../data/refineRates';
 import type { AttemptResult } from './types';
 import type { SessionStats } from './sessionStats';
 import type { RngProfile } from './rngProfile';
@@ -26,6 +27,9 @@ export const TITLE_CONFIG = {
   victimOfRng: { minAttempts: 180, maxPeak: 3 },
   clutchMaster: { minFailStreakBeforeClutch: 5 },
   dragon: { minPeak: 10, minSetbacksFrom9: 3, minFinish: 10 },
+  stoneCollector: {},
+  edgeDancer: { minAtEdge: 12 },
+  fatalSymmetry: { minAttempts: 20 },
 };
 
 export interface TitleResult {
@@ -178,11 +182,26 @@ export function evaluateTitles(
     add('SLOW_AND_STEADY', 'ТИХОХІД', `Дійшов до +${stats.peakLevel} без жодного падіння більше −${cfg.slowAndSteady.maxDrop}.`);
   }
 
+  const methodsUsed = new Set(history.map((h) => h.method));
+  if (methodsUsed.size === 4) {
+    add('STONE_COLLECTOR', 'КОЛЕКЦІОНЕР КАМІННЯ', 'Використав усі 4 методи заточки за один забіг — міраж, небеска, підземка й світобудова.');
+  }
+
+  const atEdge = history.filter((h) => h.before === MAX_LEVEL - 1).length;
+  if (atEdge >= cfg.edgeDancer.minAtEdge) {
+    add('EDGE_DANCER', 'ТАНЦЮРИСТ НА МЕЖІ', `${atEdge} спроб на +${MAX_LEVEL - 1} — крок від вершини, крок від прірви.`);
+  }
+
+  if (stats.attemptsUsed >= cfg.fatalSymmetry.minAttempts && stats.totalSuccesses === stats.totalFails) {
+    add('FATAL_SYMMETRY', 'ФАТАЛЬНА СИМЕТРІЯ', `Точно ${stats.totalSuccesses} успіхів і ${stats.totalFails} провалів — ідеальний баланс всесвіту.`);
+  }
+
   // Пріоритет для ПЕРВИННОГО титулу — рідкісні/подієві напочатку.
   const priority = [
     'THE_CHOSEN_ONE', 'RNG_GOD', 'THE_DRAGON', 'CLUTCH_MASTER', 'BLOOD_SACRIFICE',
     'THE_CURSED', 'VICTIM_OF_RNG', 'WILD_CARD', 'DEMOLITION_EXPERT', 'THE_GAMBLER',
     'THE_UNBREAKABLE', 'BLESSED', 'THE_STREAKER', 'THE_GRINDER', 'SLOW_AND_STEADY',
+    'EDGE_DANCER', 'STONE_COLLECTOR', 'FATAL_SYMMETRY',
   ];
   const byId = new Map(qualified.map((t) => [t.id, t]));
   const primary = priority.map((id) => byId.get(id)).find((t): t is TitleResult => !!t) ?? null;

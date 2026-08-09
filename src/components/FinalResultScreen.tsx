@@ -12,6 +12,7 @@ import type { SessionStats } from '../lib/sessionStats';
 import type { RngProfile } from '../lib/rngProfile';
 import type { TitleResult } from '../lib/titles';
 import type { ShameEntry } from '../lib/hallOfShame';
+import type { BustedJoke } from '../lib/cheatBusted';
 import HistoryGraph from './HistoryGraph';
 
 function Stat({ label, value }: { label: string; value: string | number }) {
@@ -40,6 +41,7 @@ export default function FinalResultScreen({
   titles,
   shame,
   submitMsg,
+  busted,
   onTryAgain,
   onViewLeaderboard,
 }: {
@@ -50,6 +52,7 @@ export default function FinalResultScreen({
   titles: { qualified: TitleResult[]; primary: TitleResult | null };
   shame: ShameEntry[];
   submitMsg: string | null;
+  busted?: BustedJoke;
   onTryAgain: () => void;
   onViewLeaderboard: () => void;
 }) {
@@ -63,6 +66,13 @@ export default function FinalResultScreen({
           <h3>Результат забігу</h3>
         </div>
         <div className="modal-body">
+          {busted && (
+            <div className="banner banner-bad" style={{ marginBottom: 16 }}>
+              <b>{busted.title}</b>
+              <br />
+              {busted.line} Результат у ладдер не потрапив.
+            </div>
+          )}
           <div className="result-card">
             <div className="result-card-head">
               <span className="result-nick">{nickname}</span>

@@ -6,6 +6,7 @@
 // =========================================================
 
 import { supabase } from '../app/supabaseClient';
+import type { AttemptResult } from '../lib/types';
 
 export interface LadderSettings {
   pointsPerSuccess: number;
@@ -33,6 +34,9 @@ export interface LadderEntry extends LadderStats {
   attempts: number;
   points: number;
   updatedAt: string;
+  /** Повна історія спроб забігу — потрібна серверному тригеру для перевірки
+   * "чи справді результат можливий" (0005_history_validation.sql). */
+  history: AttemptResult[];
 }
 
 interface SettingsRow {
@@ -54,6 +58,7 @@ interface EntryRow {
   success_rate: number;
   peak_attempt: number;
   luck_score: number;
+  history: AttemptResult[];
 }
 
 const settingsFromRow = (r: SettingsRow): LadderSettings => ({
@@ -75,6 +80,7 @@ const entryFromRow = (r: EntryRow): LadderEntry => ({
   successRate: r.success_rate,
   peakAttempt: r.peak_attempt,
   luckScore: r.luck_score,
+  history: r.history ?? [],
 });
 const statsToRow = (s: LadderStats) => ({
   best_streak: s.bestStreak,
@@ -124,13 +130,17 @@ export async function fetchLadder(limit?: number): Promise<LadderEntry[]> {
 }
 
 /** "Кращий" = вищий рівень; за однакового рівня — менше спроб. Вносить лише
- * якщо результат кращий за вже наявний запис цього ніка. */
+ * якщо результат кращий за вже наявний запис цього ніка.
+ * history — повна історія спроб забігу; сервер (0005_history_validation.sql)
+ * перераховує з неї всю статистику і відхиляє upsert, якщо надіслані числа
+ * їй не відповідають (захист від підміни значень напряму через консоль). */
 export async function submitIfBetter(
   nickname: string,
   level: number,
   attempts: number,
   points: number,
   stats: LadderStats,
+  history: AttemptResult[],
 ): Promise<{ submitted: boolean }> {
   const { data: existing, error: selErr } = await supabase
     .from('ladder_entries')
@@ -146,7 +156,10 @@ export async function submitIfBetter(
 
   const { error } = await supabase
     .from('ladder_entries')
-    .upsert({ nickname, level, attempts, points, updated_at: new Date().toISOString(), ...statsToRow(stats) }, { onConflict: 'nickname' });
+    .upsert(
+      { nickname, level, attempts, points, history, updated_at: new Date().toISOString(), ...statsToRow(stats) },
+      { onConflict: 'nickname' },
+    );
   if (error) throw error;
   return { submitted: true };
 }
@@ -184,6 +197,7 @@ export async function mergeLadderEntries(nicknames: string[], targetNickname: st
         level: best.level,
         attempts: best.attempts,
         points: best.points,
+        history: best.history ?? [],
         updated_at: new Date().toISOString(),
         best_streak: best.best_streak,
         worst_streak: best.worst_streak,

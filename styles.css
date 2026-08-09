@@ -286,6 +286,7 @@ html[data-theme="light"] .theme-ico-moon { display: inline; }
   border: 1px solid rgba(255, 191, 71, 0.25);
   color: #ffe0a6;
 }
+.banner-bad { background: rgba(var(--bad-rgb), 0.1); border-color: rgba(var(--bad-rgb), 0.35); color: var(--bad); }
 
 /* ── Футер ──────────────────────────────────────────────── */
 .site-footer { padding: 28px 0; background: var(--bg-1); border-top: 1px solid var(--accent-2); margin-top: 20px; }

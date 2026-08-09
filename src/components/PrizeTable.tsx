@@ -45,12 +45,12 @@ export default function PrizeTable({
             Фонд — 1000 скринь, розподілений між топ-10 місцями ладдера.
           </p>
           <div className="table-wrap">
-            <table className="data-table">
+            <table className="data-table prize-table">
               <thead>
                 <tr>
                   <th>Місце</th>
                   <th className="num">🏆 Сундуки</th>
-                  <th className="num">Частка фонду</th>
+                  <th className="num share-col">Частка фонду</th>
                 </tr>
               </thead>
               <tbody>
@@ -58,13 +58,13 @@ export default function PrizeTable({
                   <tr key={r.place} className={i + 1 === myPlace ? 'winner' : undefined}>
                     <td>{r.place}</td>
                     <td className="num"><b>{r.chests}</b></td>
-                    <td className="num">{r.share}</td>
+                    <td className="num share-col">{r.share}</td>
                   </tr>
                 ))}
                 <tr style={{ borderTop: '2px solid var(--line-2)' }}>
                   <td><b>Разом</b></td>
                   <td className="num"><b>1000</b></td>
-                  <td className="num"><b>100%</b></td>
+                  <td className="num share-col"><b>100%</b></td>
                 </tr>
               </tbody>
             </table>

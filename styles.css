@@ -309,6 +309,13 @@ html[data-theme="light"] .theme-ico-moon { display: inline; }
 /* ── Таблиця ладдера ──────────────────────────────────────── */
 .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--line); }
 .data-table { width: 100%; border-collapse: collapse; font-size: 14.5px; min-width: 420px; }
+/* Таблиця нагород у попапі вужча за модалку на телефонах — ховаємо
+   колонку "Частка фонду" (сундуки й так усе показують) замість
+   горизонтального скролу всередині попапу. */
+@media (max-width: 600px) {
+  .prize-table.data-table { min-width: 0; }
+  .prize-table .share-col { display: none; }
+}
 .data-table th, .data-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--line); }
 .data-table th {
   background: rgba(255, 255, 255, 0.03);

@@ -245,9 +245,9 @@ export default function App() {
         <main style={{ width: '100%' }}>
           <header className="section-head">
             <span className="eyebrow">Заточка міражами</span>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
-              <h2 style={{ margin: 0 }}>Ладдер страждання</h2>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowPrizes(true)}>🏆 Таблиця нагород</button>
+            <div className="title-row">
+              <h2>Ладдер страждання</h2>
+              <button type="button" className="btn btn-ghost" onClick={() => setShowPrizes(true)}>🏆 Таблиця нагород</button>
             </div>
             <p>Гравець: <b>{nickname || '—'}</b></p>
           </header>

@@ -295,14 +295,11 @@ export default function App() {
                 type="button"
                 className="btn btn-ghost"
                 disabled={game.state.attempts < MIN_ATTEMPTS_FOR_RESET}
-                title={
-                  game.state.attempts < MIN_ATTEMPTS_FOR_RESET
-                    ? `Доступно після ${MIN_ATTEMPTS_FOR_RESET} спроб (лишилось ${MIN_ATTEMPTS_FOR_RESET - game.state.attempts})`
-                    : undefined
-                }
                 onClick={() => game.reset()}
               >
-                ↺ Скинути прогрес
+                {game.state.attempts < MIN_ATTEMPTS_FOR_RESET
+                  ? `↺ Скинути прогрес (лишилось ${MIN_ATTEMPTS_FOR_RESET - game.state.attempts} спроб)`
+                  : '↺ Скинути прогрес'}
               </button>
             </div>
 

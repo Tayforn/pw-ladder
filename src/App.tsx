@@ -39,6 +39,16 @@ const LADDER_SECTION_ID = 'ladder-section';
 const MIN_ATTEMPTS_FOR_RESET = 150;
 const DEFAULT_SETTINGS: LadderSettings = { pointsPerSuccess: 10, skyCost: 20, underCost: 20, worldCost: 10 };
 
+/** Українське відмінювання "спроба/спроби/спроб" за числівником n. */
+function attemptsWord(n: number): string {
+  const mod100 = n % 100;
+  const mod10 = n % 10;
+  if (mod100 >= 11 && mod100 <= 14) return 'спроб';
+  if (mod10 === 1) return 'спроба';
+  if (mod10 >= 2 && mod10 <= 4) return 'спроби';
+  return 'спроб';
+}
+
 const STONES: Array<{ method: Exclude<StoneMethod, 'mirage'>; label: string; cls: string; failNote: string }> = [
   { method: 'sky', label: 'Небеска', cls: 'sky', failNote: 'провал → рівень 0' },
   { method: 'under', label: 'Підземка', cls: 'under', failNote: 'провал → −1' },
@@ -220,7 +230,10 @@ export default function App() {
         <main style={{ width: '100%' }}>
           <header className="section-head">
             <span className="eyebrow">Заточка міражами</span>
-            <h2>Ладдер страждання</h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+              <h2 style={{ margin: 0 }}>Ладдер страждання</h2>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowPrizes(true)}>🏆 Таблиця нагород</button>
+            </div>
             <p>Гравець: <b>{nickname || '—'}</b></p>
           </header>
 
@@ -300,7 +313,10 @@ export default function App() {
                 onClick={() => game.reset()}
               >
                 {game.state.attempts < MIN_ATTEMPTS_FOR_RESET
-                  ? `↺ Скинути прогрес (лишилось ${MIN_ATTEMPTS_FOR_RESET - game.state.attempts} спроб)`
+                  ? (() => {
+                      const left = MIN_ATTEMPTS_FOR_RESET - game.state.attempts;
+                      return `↺ до скидання лишилося ${left} ${attemptsWord(left)}`;
+                    })()
                   : '↺ Скинути прогрес'}
               </button>
             </div>
@@ -323,10 +339,7 @@ export default function App() {
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginTop: 28 }}>
-            <h3 id={LADDER_SECTION_ID} style={{ margin: 0 }}>Ладдер · Топ 10</h3>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowPrizes(true)}>🏆 Таблиця нагород</button>
-          </div>
+          <h3 id={LADDER_SECTION_ID} style={{ marginTop: 28 }}>Ладдер · Топ 10</h3>
           <div className="card">
             <LadderTable entries={ladder} nickname={nickname} />
           </div>

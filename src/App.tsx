@@ -315,7 +315,7 @@ export default function App() {
                 {game.state.attempts < MIN_ATTEMPTS_FOR_RESET
                   ? (() => {
                       const left = MIN_ATTEMPTS_FOR_RESET - game.state.attempts;
-                      return `↺ до скидання лишилося ${left} ${attemptsWord(left)}`;
+                      return `↺ до можливості скидання ${left} ${attemptsWord(left)}`;
                     })()
                   : '↺ Скинути прогрес'}
               </button>

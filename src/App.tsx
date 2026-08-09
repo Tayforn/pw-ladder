@@ -91,6 +91,7 @@ export default function App() {
   });
   const [settings, setSettings] = useState<LadderSettings>(DEFAULT_SETTINGS);
   const [ladder, setLadder] = useState<LadderEntry[]>([]);
+  const [showPrizes, setShowPrizes] = useState(false);
   const [finalResult, setFinalResult] = useState<FinalResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -322,18 +323,20 @@ export default function App() {
             )}
           </div>
 
-          <h3 id={LADDER_SECTION_ID} style={{ marginTop: 28 }}>Ладдер · Топ 10</h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginTop: 28 }}>
+            <h3 id={LADDER_SECTION_ID} style={{ margin: 0 }}>Ладдер · Топ 10</h3>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowPrizes(true)}>🏆 Таблиця нагород</button>
+          </div>
           <div className="card">
             <LadderTable entries={ladder} nickname={nickname} />
           </div>
-
-          <PrizeTable />
 
           <AwardsSection />
         </main>
       </div>
       <Footer />
       {showInfo && <InfoPopup nickname={nickname} onStart={startGame} />}
+      {showPrizes && <PrizeTable entries={ladder} nickname={nickname} onClose={() => setShowPrizes(false)} />}
       {finalResult && (
         <FinalResultScreen
           nickname={nickname}

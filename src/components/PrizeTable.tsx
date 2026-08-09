@@ -1,6 +1,7 @@
 // =========================================================
-// Призовий фонд — статичний розподіл 100 скринь між топ-10 місцями
-// ладдера. Суто інформаційний блок, жодних даних із Supabase.
+// Попап "Таблиця нагород" — статичний розподіл 1000 скринь між топ-10
+// місцями ладдера. Підсвічує рядок поточного гравця, якщо його нік є
+// серед переданих (топ-10) записів.
 // =========================================================
 
 interface PrizeRow {
@@ -22,40 +23,57 @@ const ROWS: PrizeRow[] = [
   { place: '10', chests: 50, share: '5%' },
 ];
 
-export default function PrizeTable() {
+export default function PrizeTable({
+  entries,
+  nickname,
+  onClose,
+}: {
+  entries: { nickname: string }[];
+  nickname: string;
+  onClose: () => void;
+}) {
+  const myPlace = entries.findIndex((e) => e.nickname === nickname) + 1; // 0, якщо не в топ-10
+
   return (
-    <>
-      <h3 style={{ marginTop: 28 }}>Призовий фонд</h3>
-      <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>
-        Фонд — 100 скринь, розподілений між топ-10 місцями ладдера.
-      </p>
-      <div className="card" style={{ padding: 0 }}>
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Місце</th>
-                <th className="num">🏆 Сундуки</th>
-                <th className="num">Частка фонду</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ROWS.map((r) => (
-                <tr key={r.place}>
-                  <td>{r.place}</td>
-                  <td className="num"><b>{r.chests}</b></td>
-                  <td className="num">{r.share}</td>
+    <div className="modal-overlay">
+      <div className="modal" role="dialog" aria-modal="true" style={{ width: 'min(560px, 100%)' }}>
+        <div className="modal-head">
+          <h3>Таблиця нагород</h3>
+        </div>
+        <div className="modal-body">
+          <p className="hint" style={{ marginTop: 0, marginBottom: 12 }}>
+            Фонд — 1000 скринь, розподілений між топ-10 місцями ладдера.
+          </p>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Місце</th>
+                  <th className="num">🏆 Сундуки</th>
+                  <th className="num">Частка фонду</th>
                 </tr>
-              ))}
-              <tr style={{ borderTop: '2px solid var(--line-2)' }}>
-                <td><b>Разом</b></td>
-                <td className="num"><b>1000</b></td>
-                <td className="num"><b>100%</b></td>
-              </tr>
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {ROWS.map((r, i) => (
+                  <tr key={r.place} className={i + 1 === myPlace ? 'winner' : undefined}>
+                    <td>{r.place}</td>
+                    <td className="num"><b>{r.chests}</b></td>
+                    <td className="num">{r.share}</td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: '2px solid var(--line-2)' }}>
+                  <td><b>Разом</b></td>
+                  <td className="num"><b>1000</b></td>
+                  <td className="num"><b>100%</b></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Закрити</button>
         </div>
       </div>
-    </>
+    </div>
   );
 }

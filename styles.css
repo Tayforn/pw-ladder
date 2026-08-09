@@ -413,6 +413,9 @@ html[data-theme="light"] .theme-ico-moon { display: inline; }
 .stone-meta { font-size: 11px; color: var(--text-mute); letter-spacing: 0.02em; }
 
 .sim-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .sim-actions { flex-direction: column; align-items: stretch; }
+}
 
 @media (max-width: 720px) {
   .sim-display { grid-template-columns: 1fr; padding: 16px 18px; }

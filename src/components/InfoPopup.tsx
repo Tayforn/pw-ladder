@@ -14,6 +14,9 @@ export default function InfoPopup({
 }) {
   const [value, setValue] = useState(nickname);
   const trimmed = value.trim();
+  /** Повертається сюди пізніше (напр. за кнопкою "Правила" в хедері), а не
+   * зайшов уперше — у нього вже є збережений нік. */
+  const isReturning = !!nickname;
 
   return (
     <div className="modal-overlay">
@@ -42,9 +45,11 @@ export default function InfoPopup({
           </p>
           <p style={{ margin: 0 }}>
             У рейтингу (топ-10) головне — <b>найвищий рівень</b>; за однакового рівня перемагає
-            той, хто дійшов до нього за <b>меншу кількість спроб</b>. Тисни «Внести в ладдер» коли завгодно: результат
+            той, хто дійшов до нього за <b>меншу кількість спроб</b>, а якщо рівні й спроби —
+            перемагають <b>більші бали</b>. Тисни «Внести в ладдер» коли завгодно: результат
             зарахується, лише якщо він кращий за твій попередній, і лічильники скинуться —
-            можна починати заново.
+            можна починати заново. «Скинути прогрес» без внесення можна лише після{' '}
+            <b>150 спроб</b> — щоб не перекидати невдалий старт.
           </p>
           <label className="field">
             <span>Нікнейм</span>
@@ -60,8 +65,14 @@ export default function InfoPopup({
           </label>
         </div>
         <div className="modal-foot">
-          <button type="button" className="btn btn-primary btn-lg" disabled={!trimmed} onClick={() => onStart(trimmed)}>
-            Почати
+          <button
+            type="button"
+            className="btn btn-primary btn-lg"
+            style={{ width: '100%' }}
+            disabled={!trimmed}
+            onClick={() => onStart(trimmed)}
+          >
+            {isReturning ? 'Закрити' : 'Почати'}
           </button>
         </div>
       </div>

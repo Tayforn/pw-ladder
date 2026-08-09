@@ -240,14 +240,14 @@ export default function App() {
 
   return (
     <>
-      <Header onShowInfo={() => setShowInfo(true)} />
+      <Header onShowInfo={() => { setShowPrizes(false); setShowInfo(true); }} />
       <div className="app-shell container">
         <main style={{ width: '100%' }}>
           <header className="section-head">
             <span className="eyebrow">Заточка міражами</span>
             <div className="title-row">
               <h2>Ладдер страждання</h2>
-              <button type="button" className="btn btn-ghost" onClick={() => setShowPrizes(true)}>🏆 Таблиця нагород</button>
+              <button type="button" className="btn btn-ghost" onClick={() => { setShowInfo(false); setShowPrizes(true); }}>🏆 Таблиця нагород</button>
             </div>
             <p>Гравець: <b>{nickname || '—'}</b></p>
           </header>

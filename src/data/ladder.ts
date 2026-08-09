@@ -106,7 +106,8 @@ export async function updateSettings(patch: Partial<LadderSettings>): Promise<vo
  * однакових рівнів — за НАЙМЕНШОЮ кількістю спроб (бали можна нескінченно
  * накрутити просто клікаючи міраж, спроби так просто не підробиш — вони й
  * так відображають витрачені бали/камені: дорожчий/ризикованіший шлях до
- * того самого рівня — це саме БІЛЬШЕ спроб, не менше).
+ * того самого рівня — це саме БІЛЬШЕ спроб, не менше). Якщо і рівень, і
+ * спроби однакові — розв'язує нічию БІЛЬША кількість балів.
  * limit не задано — повний список (потрібен адмінці для об'єднання записів
  * поза топ-10, і для підрахунку спецнагород по всій історії ладдера). */
 export async function fetchLadder(limit?: number): Promise<LadderEntry[]> {
@@ -114,7 +115,8 @@ export async function fetchLadder(limit?: number): Promise<LadderEntry[]> {
     .from('ladder_entries')
     .select('*')
     .order('level', { ascending: false })
-    .order('attempts', { ascending: true });
+    .order('attempts', { ascending: true })
+    .order('points', { ascending: false });
   if (limit) query = query.limit(limit);
   const { data, error } = await query;
   if (error) throw error;

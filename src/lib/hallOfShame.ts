@@ -5,7 +5,7 @@
 // =========================================================
 
 import type { AttemptResult } from './types';
-import type { SessionStats } from './sessionStats';
+import { longestSameLevelFailStreak, type SessionStats } from './sessionStats';
 
 export interface ShameEntry {
   title: string;
@@ -15,47 +15,12 @@ export interface ShameEntry {
 const CONFIG = {
   mostCursedFailStreak: 5,
   bigFall: 4,
+  sameLevelFailStreak: 5,
   slowMilestoneLevel: 4,
   slowMilestoneAttempts: 20,
-  unmovableBand: 1,
   unmovableLength: 15,
+  basementTrips: 8,
 };
-
-function longestSameLevelFailStreak(history: AttemptResult[]): { length: number; level: number } {
-  let best = 0;
-  let bestLevel = -1;
-  let cur = 0;
-  let curLevel = -1;
-  for (const h of history) {
-    if (!h.success && h.before === curLevel) cur++;
-    else if (!h.success) {
-      curLevel = h.before;
-      cur = 1;
-    } else {
-      cur = 0;
-      curLevel = -1;
-    }
-    if (cur > best) {
-      best = cur;
-      bestLevel = curLevel;
-    }
-  }
-  return { length: best, level: bestLevel };
-}
-
-/** Найдовше "застрягання" — вікно спроб, де рівень не виходив за межі
- * ±unmovableBand від стартового значення цього вікна. */
-function longestStagnation(history: AttemptResult[]): { length: number; level: number; startAttempt: number } {
-  let best = { length: 0, level: 0, startAttempt: 0 };
-  for (let i = 0; i < history.length; i++) {
-    const base = history[i].before;
-    let j = i;
-    while (j < history.length && Math.abs(history[j].after - base) <= CONFIG.unmovableBand) j++;
-    const length = j - i;
-    if (length > best.length) best = { length, level: base, startAttempt: i + 1 };
-  }
-  return best;
-}
 
 export function buildHallOfShame(history: AttemptResult[], stats: SessionStats): ShameEntry[] {
   const entries: ShameEntry[] = [];
@@ -78,7 +43,7 @@ export function buildHallOfShame(history: AttemptResult[], stats: SessionStats):
   }
 
   const sameLevel = longestSameLevelFailStreak(history);
-  if (sameLevel.length >= 5) {
+  if (sameLevel.length >= CONFIG.sameLevelFailStreak) {
     entries.push({
       title: 'КРИВАВЕ ЖЕРТВОПРИНОШЕННЯ',
       line: `${sameLevel.length} провалів поспіль саме на +${sameLevel.level}. Це вже особисте.`,
@@ -93,11 +58,18 @@ export function buildHallOfShame(history: AttemptResult[], stats: SessionStats):
     });
   }
 
-  const stagnation = longestStagnation(history);
-  if (stagnation.length >= CONFIG.unmovableLength) {
+  if (stats.longestStagnation.length >= CONFIG.unmovableLength) {
+    const s = stats.longestStagnation;
     entries.push({
       title: 'НЕЗРУШНИЙ',
-      line: `${stagnation.length} спроб навколо +${stagnation.level} без реального прогресу, починаючи зі спроби №${stagnation.startAttempt}.`,
+      line: `${s.length} спроб навколо +${s.level} без реального прогресу, починаючи зі спроби №${s.startAttempt}.`,
+    });
+  }
+
+  if (stats.timesHitZero >= CONFIG.basementTrips) {
+    entries.push({
+      title: 'АБОНЕМЕНТ У ПІДВАЛ',
+      line: `${stats.timesHitZero} разів з'їхав у +0. Ліфт униз працює бездоганно.`,
     });
   }
 

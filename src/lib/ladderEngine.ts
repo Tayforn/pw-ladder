@@ -65,6 +65,43 @@ export function costFor(method: StoneMethod, settings: LadderSettings): number {
   return settings.worldCost;
 }
 
+/** Чистий крок гри — ВСЯ ігрова логіка однієї спроби. `roll` ін'єктується:
+ * Math.random у проді, seeded RNG у тестах/симуляціях (щоб калібрування
+ * титулів і property-тести були відтворюваними). Повертає той самий стан,
+ * якщо спроба неможлива (ліміт, макс. рівень, нема балів). */
+export function applyAttempt(
+  s: LadderGameState,
+  method: StoneMethod,
+  settings: LadderSettings,
+  roll: () => number = Math.random,
+): LadderGameState {
+  if (s.level >= MAX_LEVEL || s.attempts >= MAX_ATTEMPTS) return s;
+  const cost = costFor(method, settings);
+  if (s.points < cost) return s;
+  const p = RATES[method][s.level + 1];
+  if (!p) return s;
+
+  const success = roll() < p;
+  const before = s.level;
+  let level = before;
+  let points = s.points - cost;
+
+  if (success) {
+    level = before + 1;
+    points += settings.pointsPerSuccess;
+  } else if (method === 'world') {
+    /* рівень лишається */
+  } else if (method === 'under') {
+    level = Math.max(0, before - 1);
+  } else {
+    level = 0; // mirage / sky
+  }
+
+  const raw = { method, success, before, after: level, p };
+  const record: AttemptResult = { ...raw, tier: tierFor(before), labels: labelsFor(raw, s.history) };
+  return { level, points, attempts: s.attempts + 1, history: [...s.history, record] };
+}
+
 export function useLadderGame(settings: LadderSettings) {
   const [state, setState] = useState<LadderGameState>(loadProgress);
 
@@ -82,35 +119,7 @@ export function useLadderGame(settings: LadderSettings) {
   );
 
   const attempt = useCallback(
-    (method: StoneMethod) => {
-      setState((s) => {
-        if (s.level >= MAX_LEVEL || s.attempts >= MAX_ATTEMPTS) return s;
-        const cost = costFor(method, settings);
-        if (s.points < cost) return s;
-        const p = RATES[method][s.level + 1];
-        if (!p) return s;
-
-        const success = Math.random() < p;
-        const before = s.level;
-        let level = before;
-        let points = s.points - cost;
-
-        if (success) {
-          level = before + 1;
-          points += settings.pointsPerSuccess;
-        } else if (method === 'world') {
-          /* рівень лишається */
-        } else if (method === 'under') {
-          level = Math.max(0, before - 1);
-        } else {
-          level = 0; // mirage / sky
-        }
-
-        const raw = { method, success, before, after: level, p };
-        const record: AttemptResult = { ...raw, tier: tierFor(before), labels: labelsFor(raw, s.history) };
-        return { level, points, attempts: s.attempts + 1, history: [...s.history, record] };
-      });
-    },
+    (method: StoneMethod) => setState((s) => applyAttempt(s, method, settings)),
     [settings],
   );
 

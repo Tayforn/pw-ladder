@@ -4,6 +4,8 @@
 // серед переданих (топ-10) записів.
 // =========================================================
 
+import Modal from './Modal';
+
 interface PrizeRow {
   place: string;
   chests: number;
@@ -35,45 +37,43 @@ export default function PrizeTable({
   const myPlace = entries.findIndex((e) => e.nickname === nickname) + 1; // 0, якщо не в топ-10
 
   return (
-    <div className="modal-overlay">
-      <div className="modal" role="dialog" aria-modal="true" style={{ width: 'min(560px, 100%)' }}>
-        <div className="modal-head">
-          <h3>Таблиця нагород</h3>
-        </div>
-        <div className="modal-body">
-          <p className="hint" style={{ marginTop: 0, marginBottom: 12 }}>
-            Фонд — 1000 скринь, розподілений між топ-10 місцями ладдера.
-          </p>
-          <div className="table-wrap">
-            <table className="data-table prize-table">
-              <thead>
-                <tr>
-                  <th>Місце</th>
-                  <th className="num">🏆 Сундуки</th>
-                  <th className="num share-col">Частка фонду</th>
+    <Modal width={560} onClose={onClose}>
+      <div className="modal-head">
+        <h3>Таблиця нагород</h3>
+      </div>
+      <div className="modal-body">
+        <p className="hint" style={{ marginTop: 0, marginBottom: 12 }}>
+          Фонд — 1000 скринь, розподілений між топ-10 місцями ладдера.
+        </p>
+        <div className="table-wrap">
+          <table className="data-table prize-table">
+            <thead>
+              <tr>
+                <th>Місце</th>
+                <th className="num">🏆 Сундуки</th>
+                <th className="num share-col">Частка фонду</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ROWS.map((r, i) => (
+                <tr key={r.place} className={i + 1 === myPlace ? 'winner' : undefined}>
+                  <td>{r.place}</td>
+                  <td className="num"><b>{r.chests}</b></td>
+                  <td className="num share-col">{r.share}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {ROWS.map((r, i) => (
-                  <tr key={r.place} className={i + 1 === myPlace ? 'winner' : undefined}>
-                    <td>{r.place}</td>
-                    <td className="num"><b>{r.chests}</b></td>
-                    <td className="num share-col">{r.share}</td>
-                  </tr>
-                ))}
-                <tr style={{ borderTop: '2px solid var(--line-2)' }}>
-                  <td><b>Разом</b></td>
-                  <td className="num"><b>1000</b></td>
-                  <td className="num share-col"><b>100%</b></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div className="modal-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Закрити</button>
+              ))}
+              <tr style={{ borderTop: '2px solid var(--line-2)' }}>
+                <td><b>Разом</b></td>
+                <td className="num"><b>1000</b></td>
+                <td className="num share-col"><b>100%</b></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
-    </div>
+      <div className="modal-foot">
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Закрити</button>
+      </div>
+    </Modal>
   );
 }

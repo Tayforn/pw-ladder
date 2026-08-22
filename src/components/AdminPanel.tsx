@@ -156,7 +156,8 @@ export default function AdminPanel({
     <div className="card">
       <h3 style={{ marginTop: 0 }}>Налаштування балів</h3>
       <div className="field-row admin-field-row">
-        <NumberField label="Балів за успіх (міраж)" value={settings.pointsPerSuccess} onSave={(v) => save({ pointsPerSuccess: v })} />
+        <NumberField label="Балів за успіх (основна)" value={settings.pointsPerSuccess} onSave={(v) => save({ pointsPerSuccess: v })} />
+        <NumberField label="Балів за успіх (підставна)" value={settings.decoyPointsPerSuccess} onSave={(v) => save({ decoyPointsPerSuccess: v })} />
         <NumberField label="Вартість «Небеска»" value={settings.skyCost} onSave={(v) => save({ skyCost: v })} />
         <NumberField label="Вартість «Підземка»" value={settings.underCost} onSave={(v) => save({ underCost: v })} />
         <NumberField label="Вартість «Світобудова»" value={settings.worldCost} onSave={(v) => save({ worldCost: v })} />

@@ -10,6 +10,8 @@ import type { AttemptResult } from '../lib/types';
 
 export interface LadderSettings {
   pointsPerSuccess: number;
+  /** Бали за успіх "підставної" (предмета з нижчим рівнем), 0008. */
+  decoyPointsPerSuccess: number;
   skyCost: number;
   underCost: number;
   worldCost: number;
@@ -46,6 +48,7 @@ export interface LadderEntry extends LadderStats {
 
 interface SettingsRow {
   points_per_success: number;
+  decoy_points_per_success: number;
   sky_cost: number;
   under_cost: number;
   world_cost: number;
@@ -77,6 +80,7 @@ const ENTRY_COLUMNS =
 
 const settingsFromRow = (r: SettingsRow): LadderSettings => ({
   pointsPerSuccess: r.points_per_success,
+  decoyPointsPerSuccess: r.decoy_points_per_success ?? 5,
   skyCost: r.sky_cost,
   underCost: r.under_cost,
   worldCost: r.world_cost,
@@ -121,6 +125,7 @@ export async function fetchSettings(): Promise<LadderSettings> {
 export async function updateSettings(patch: Partial<LadderSettings>): Promise<void> {
   const row: Partial<SettingsRow> = {};
   if (patch.pointsPerSuccess !== undefined) row.points_per_success = patch.pointsPerSuccess;
+  if (patch.decoyPointsPerSuccess !== undefined) row.decoy_points_per_success = patch.decoyPointsPerSuccess;
   if (patch.skyCost !== undefined) row.sky_cost = patch.skyCost;
   if (patch.underCost !== undefined) row.under_cost = patch.underCost;
   if (patch.worldCost !== undefined) row.world_cost = patch.worldCost;

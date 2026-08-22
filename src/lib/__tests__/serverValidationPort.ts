@@ -1,15 +1,16 @@
 // =========================================================
-// TS-порт функції ladder_entries_validate() з міграції 0006 — рядок у
-// рядок повторює серверну логіку (перевірка переходів, перерахунок
-// статистики, luck ±1, клемп балів). Використовується property-тестом
-// "чесний забіг НІКОЛИ не відхиляється" (serverParity.test.ts): якщо
-// хтось змінить клієнтські формули або RATES без синхронного апдейту
-// SQL — цей тест впаде першим, ДО того, як чесні гравці почнуть
-// отримувати екран "спіймано на гарячому".
+// TS-порт функції ladder_entries_validate() з міграції 0008 — рядок у
+// рядок повторює серверну логіку: ДВА ланцюжки рівнів (item a/b), вибір
+// переможця, перерахунок статистики, luck ±1, клемп балів, обчислювані
+// поля спецнагород. Використовується property-тестом "чесний забіг НІКОЛИ
+// не відхиляється" (serverParity.test.ts): якщо хтось змінить клієнтські
+// формули, правило переможця або RATES без синхронного апдейту SQL — цей
+// тест впаде першим, ДО того, як чесні гравці почнуть отримувати екран
+// "спіймано на гарячому".
 // =========================================================
 
 import { RATES } from '../../data/refineRates';
-import type { AttemptResult } from '../types';
+import type { AttemptResult, ItemSlot } from '../types';
 
 export interface SubmittedEntry {
   nickname: string;
@@ -26,17 +27,23 @@ export interface SubmittedEntry {
   history: AttemptResult[];
 }
 
+interface ItemAgg {
+  level: number;
+  peak: number;
+  peakAttempt: number;
+  drop: number;
+  afters: number[];
+}
+
 /** Кидає Error із тим самим текстом-префіксом, що й SQL-тригер; повертає
- * points ПІСЛЯ серверного клемпа і поля спецнагород, які сервер (0007)
- * обчислює з history сам. `existing` — рядок, який оновлюється
- * (undefined = insert). Адмін-байпас тут навмисно не портовано — тести
- * ганяють шлях звичайного гравця. */
+ * points ПІСЛЯ серверного клемпа і поля спецнагород, які сервер обчислює з
+ * history сам. `existing` — рядок, який оновлюється (undefined = insert).
+ * Адмін-байпас тут навмисно не портовано. */
 export function validateLikeServer(
   entry: SubmittedEntry,
   pointsPerSuccess: number | null,
   existing?: { level: number; attempts: number },
 ): { points: number; aggression: number; timesHitZero: number; paidAttempts: number } {
-  // Не-адмін оновлює запис лише строго кращим результатом.
   if (existing) {
     if (!(entry.level > existing.level || (entry.level === existing.level && entry.attempts < existing.attempts))) {
       throw new Error(`ladder_result_not_better: наявний результат (+${existing.level} за ${existing.attempts} спроб) не гірший за надісланий`);
@@ -51,24 +58,24 @@ export function validateLikeServer(
     throw new Error(`ladder_entries: attempts (${entry.attempts}) перевищує ліміт 200`);
   }
 
-  let curLevel = 0;
   let curStreak = 0;
   let failStreak = 0;
   let successes = 0;
   let calcBestStreak = 0;
   let calcWorstStreak = 0;
-  let calcBiggestDrop = 0;
-  let calcPeakLevel = 0;
-  let calcPeakAttempt = 0;
   let expectedSuccesses = 0;
   let stakeSum = 0;
   let calcHitZero = 0;
   let calcPaid = 0;
-  const afters: number[] = [];
+  const items: Record<ItemSlot, ItemAgg> = {
+    a: { level: 0, peak: 0, peakAttempt: 0, drop: 0, afters: [] },
+    b: { level: 0, peak: 0, peakAttempt: 0, drop: 0, afters: [] },
+  };
 
   for (let idx = 0; idx < n; idx++) {
-    const elem = entry.history[idx];
+    const elem = entry.history[idx] as Partial<AttemptResult>;
     const { method, success, before, after } = elem;
+    const item = (elem.item ?? 'a') as string;
 
     if (method == null || success == null || before == null || after == null) {
       throw new Error(`ladder_entries: history[${idx}] має відсутні/невалідні поля`);
@@ -76,8 +83,12 @@ export function validateLikeServer(
     if (!['mirage', 'sky', 'under', 'world'].includes(method)) {
       throw new Error(`ladder_entries: невідомий метод "${method}" у history[${idx}]`);
     }
-    if (before !== curLevel) {
-      throw new Error(`ladder_entries: history[${idx}] before (${before}) не збігається з рівнем після попередньої спроби (${curLevel})`);
+    if (item !== 'a' && item !== 'b') {
+      throw new Error(`ladder_entries: невідомий предмет "${item}" у history[${idx}]`);
+    }
+    const agg = items[item];
+    if (before !== agg.level) {
+      throw new Error(`ladder_entries: history[${idx}] before (${before}) не збігається з рівнем предмета ${item} після попередньої спроби (${agg.level})`);
     }
 
     const expectedP = RATES[method][before + 1];
@@ -104,37 +115,38 @@ export function validateLikeServer(
       failStreak++;
       curStreak = 0;
       calcWorstStreak = Math.max(calcWorstStreak, failStreak);
-      if (after < before) calcBiggestDrop = Math.max(calcBiggestDrop, before - after);
       if (after === 0 && before >= 1) calcHitZero++;
     }
 
-    // Дзеркало 0007: ставка спроби + платні камені.
     if (method === 'mirage' || method === 'sky') stakeSum += before;
     else if (method === 'under') stakeSum += Math.min(1, before);
     if (method !== 'mirage') calcPaid++;
 
-    if (after > calcPeakLevel) {
-      calcPeakLevel = after;
-      calcPeakAttempt = idx + 1;
+    if (!success && after < before) agg.drop = Math.max(agg.drop, before - after);
+    if (after > agg.peak) {
+      agg.peak = after;
+      agg.peakAttempt = idx + 1;
     }
-
-    afters.push(after);
-    curLevel = after;
+    agg.afters.push(after);
+    agg.level = after;
   }
 
-  if (curLevel !== entry.level) {
-    throw new Error(`ladder_entries: фінальний рівень історії (${curLevel}) не збігається з level (${entry.level})`);
+  const finalLevel = Math.max(items.a.level, items.b.level);
+  if (finalLevel !== entry.level) {
+    throw new Error(`ladder_entries: фінальний рівень історії (${finalLevel}) не збігається з level (${entry.level})`);
   }
 
-  // Прохід 2: biggestComeback — 1-based індекси, як у SQL.
+  const w = items.b.level > items.a.level || (items.b.level === items.a.level && items.b.peak > items.a.peak) ? items.b : items.a;
+
   let calcBiggestComeback = 0;
-  for (let idx = 1; idx <= n; idx++) {
-    const beforeI = idx === 1 ? 0 : afters[idx - 2];
-    const afterI = afters[idx - 1];
+  const m = w.afters.length;
+  for (let idx = 1; idx <= m; idx++) {
+    const beforeI = idx === 1 ? 0 : w.afters[idx - 2];
+    const afterI = w.afters[idx - 1];
     if (afterI < beforeI) {
       let laterPeak = afterI;
-      for (let j = idx + 1; j <= n; j++) {
-        if (afters[j - 1] > laterPeak) laterPeak = afters[j - 1];
+      for (let j = idx + 1; j <= m; j++) {
+        if (w.afters[j - 1] > laterPeak) laterPeak = w.afters[j - 1];
       }
       calcBiggestComeback = Math.max(calcBiggestComeback, laterPeak - afterI);
     }
@@ -149,8 +161,8 @@ export function validateLikeServer(
 
   if (
     entry.best_streak !== calcBestStreak || entry.worst_streak !== calcWorstStreak ||
-    entry.biggest_drop !== calcBiggestDrop || entry.biggest_comeback !== calcBiggestComeback ||
-    entry.peak_attempt !== calcPeakAttempt
+    entry.biggest_drop !== w.drop || entry.biggest_comeback !== calcBiggestComeback ||
+    entry.peak_attempt !== w.peakAttempt
   ) {
     throw new Error('ladder_entries: подана статистика (стріки/дроп/камбек/пік) не відповідає наданій історії');
   }
@@ -166,7 +178,6 @@ export function validateLikeServer(
     points = Math.min(points, successes * pointsPerSuccess);
   }
 
-  // 0007: поля спецнагород сервер обчислює і перезаписує сам.
   const aggression = Math.max(0, Math.min(100, Math.round((stakeSum / Math.max(n, 1) / 1.5) * 100)));
   return { points, aggression, timesHitZero: calcHitZero, paidAttempts: calcPaid };
 }

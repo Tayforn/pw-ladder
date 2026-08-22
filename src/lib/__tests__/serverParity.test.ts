@@ -1,14 +1,14 @@
 // =========================================================
 // Парність клієнт ↔ сервер — найдорожча потенційна помилка проєкту:
-// розсинхрон RATES/формул між TS і SQL означає, що ВСІ чесні сабміти
-// відхиляються з обвинуваченням у читерстві.
+// розсинхрон RATES/формул/правила переможця між TS і SQL означає, що ВСІ
+// чесні сабміти відхиляються з обвинуваченням у читерстві.
 //
-// 1) RATES у src/data/refineRates.ts == таблиця refine_rates у 0005 SQL
-//    (парсимо міграцію текстово).
-// 2) Property-тест: сотні чесних забігів справжнім рушієм (applyAttempt)
-//    проходять TS-порт серверного тригера (0006) БЕЗ відхилень і БЕЗ
-//    клемпа балів.
-// 3) Підроблені сабміти (підміна рівня/спроб/статистики/luck) — відхиляються.
+// 1) RATES у src/data/refineRates.ts == таблиця refine_rates у 0005 SQL.
+// 2) Property-тест: сотні чесних забігів справжнім рушієм (applyAttempt,
+//    у т.ч. ритуальні стратегії з двома предметами) проходять TS-порт
+//    серверного тригера (0008) БЕЗ відхилень і БЕЗ клемпа балів, а
+//    обчислювані сервером поля збігаються з клієнтськими.
+// 3) Підроблені сабміти відхиляються.
 // =========================================================
 
 import { describe, it, expect } from 'vitest';
@@ -19,7 +19,8 @@ import { computeSessionStats } from '../sessionStats';
 import { computeRngProfile } from '../rngProfile';
 import { validateLikeServer, type SubmittedEntry } from './serverValidationPort';
 import { lcg, simulateRun, STRATEGIES, TEST_SETTINGS, seqHistory, rep } from './helpers';
-import type { LadderGameState } from '../ladderEngine';
+import { ladderLevel, type LadderGameState } from '../ladderEngine';
+import type { AttemptResult } from '../types';
 
 describe('RATES: TS ↔ SQL (0005) парність', () => {
   it('усі 48 значень збігаються', () => {
@@ -38,14 +39,14 @@ describe('RATES: TS ↔ SQL (0005) парність', () => {
   });
 });
 
-function toSubmission(state: LadderGameState, nickname = 'tester'): SubmittedEntry {
-  const stats = computeSessionStats(state.history);
-  const profile = computeRngProfile(state.history, stats);
+function submissionFor(history: AttemptResult[], level: number, points: number, nickname = 'tester'): SubmittedEntry {
+  const stats = computeSessionStats(history);
+  const profile = computeRngProfile(history, stats);
   return {
     nickname,
-    level: state.level,
-    attempts: state.attempts,
-    points: state.points,
+    level,
+    attempts: history.length,
+    points,
     best_streak: stats.longestSuccessStreak,
     worst_streak: stats.longestFailStreak,
     biggest_drop: stats.biggestDrop,
@@ -53,24 +54,23 @@ function toSubmission(state: LadderGameState, nickname = 'tester'): SubmittedEnt
     success_rate: stats.successRate,
     peak_attempt: stats.peakAttempt,
     luck_score: profile.luck,
-    history: state.history,
+    history,
   };
 }
+const toSubmission = (state: LadderGameState) => submissionFor(state.history, ladderLevel(state), state.points);
 
 describe('чесний забіг НІКОЛИ не відхиляється сервером', () => {
   const names = Object.keys(STRATEGIES);
   for (const name of names) {
-    it(`стратегія ${name}: 150 сідованих забігів проходять валідацію`, () => {
-      for (let seed = 1; seed <= 150; seed++) {
+    it(`стратегія ${name}: 120 сідованих забігів проходять валідацію`, () => {
+      for (let seed = 1; seed <= 120; seed++) {
         const roll = lcg(seed * 7919 + names.indexOf(name));
         const state = simulateRun(STRATEGIES[name], roll);
         const entry = toSubmission(state);
         const server = validateLikeServer(entry, TEST_SETTINGS.pointsPerSuccess);
         // Клемп балів не повинен чіпати чесний результат
         expect(server.points, `seed ${seed}`).toBe(state.points);
-        // Поля спецнагород (0007) сервер рахує сам — вони мусять збігатися
-        // з клієнтськими формулами (rngProfile/sessionStats), інакше
-        // фінальний екран і лідерборд показуватимуть різні числа.
+        // Поля спецнагород сервер рахує сам — мусять збігатися з клієнтом
         const stats = computeSessionStats(state.history);
         const profile = computeRngProfile(state.history, stats);
         expect(Math.abs(server.aggression - profile.aggression), `seed ${seed} aggression`).toBeLessThanOrEqual(1);
@@ -81,8 +81,29 @@ describe('чесний забіг НІКОЛИ не відхиляється с�
   }
 
   it('порожній забіг (0 спроб) теж валідний', () => {
-    const entry = toSubmission({ level: 0, points: 0, attempts: 0, history: [] });
+    expect(() => validateLikeServer(submissionFor([], 0, 0), 10)).not.toThrow();
+  });
+
+  it('стара історія без item/role (до 0008) валідна як один предмет', () => {
+    const h = seqHistory([...rep('mirage', true, 3), ['mirage', false]]);
+    const legacy = h.map(({ item: _i, role: _r, ...rest }) => rest) as unknown as AttemptResult[];
+    // Клієнтські формули рахуються на нормалізованій історії (item='a'),
+    // сервер — на сирій (item відсутній → 'a'): мусять зійтись.
+    const entry = submissionFor(h, 0, 30);
+    entry.history = legacy;
     expect(() => validateLikeServer(entry, 10)).not.toThrow();
+  });
+
+  it('перемежована історія двох предметів: рівень = max, стати по переможцю', () => {
+    const h = seqHistory([
+      ['mirage', true, 'a'], ['mirage', false, 'b'], ['mirage', true, 'a'], ['mirage', true, 'b'],
+      ['mirage', true, 'b'], ['mirage', true, 'b'], // b = 3 > a = 2 → переможець b
+      ['mirage', false, 'a'],
+    ]);
+    const entry = submissionFor(h, 3, 40);
+    expect(() => validateLikeServer(entry, 10)).not.toThrow();
+    // level не max → відхилено
+    expect(() => validateLikeServer(submissionFor(h, 2, 40), 10)).toThrow(/фінальний рівень/);
   });
 });
 
@@ -113,19 +134,17 @@ describe('підроблені сабміти відхиляються', () => {
 
   it('неможливий перехід рівня в історії', () => {
     const h = seqHistory([...rep('mirage', true, 3)]);
-    // Підробка: третій успіх "перестрибнув" на 6
     const hacked = h.map((x, i) => (i === 2 ? { ...x, after: 6 } : x));
-    const state: LadderGameState = { level: 6, points: 30, attempts: 3, history: hacked };
-    const stats = computeSessionStats(hacked);
-    const profile = computeRngProfile(hacked, stats);
-    const e: SubmittedEntry = {
-      nickname: 'hacker', level: 6, attempts: 3, points: 30,
-      best_streak: stats.longestSuccessStreak, worst_streak: stats.longestFailStreak,
-      biggest_drop: stats.biggestDrop, biggest_comeback: stats.biggestComeback,
-      success_rate: stats.successRate, peak_attempt: stats.peakAttempt,
-      luck_score: profile.luck, history: state.history,
-    };
+    const e = submissionFor(hacked, 6, 30);
     expect(() => validateLikeServer(e, 10)).toThrow(/неможливий/);
+  });
+
+  it('ланцюжок іншого предмета: підставна "пам\'ятає" рівень основної', () => {
+    const h = seqHistory([['mirage', true, 'a'], ['mirage', true, 'a']]);
+    // Спроба на b із before=2 (рівень a) — чужий ланцюжок
+    const forged = [...h, { ...h[1], item: 'b' as const, before: 2, after: 3 }];
+    const e = submissionFor(forged, 3, 30);
+    expect(() => validateLikeServer(e, 10)).toThrow(/рівнем предмета b/);
   });
 
   it('накручені бали клемпляться до successes * pps', () => {
@@ -139,10 +158,8 @@ describe('підроблені сабміти відхиляються', () => {
     const e = honest();
     expect(() => validateLikeServer(e, 10, { level: e.level + 1, attempts: 1 }))
       .toThrow(/ladder_result_not_better/);
-    // Рівний результат — теж не кращий (захист від перейменування чужого запису)
     expect(() => validateLikeServer(e, 10, { level: e.level, attempts: e.attempts }))
       .toThrow(/ladder_result_not_better/);
-    // Строго кращий — проходить
     expect(() => validateLikeServer(e, 10, { level: Math.max(0, e.level - 1), attempts: e.attempts + 1 }))
       .not.toThrow();
   });

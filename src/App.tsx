@@ -225,6 +225,7 @@ export default function App() {
         <InfoPopup
           nickname={nickname}
           nickLocked={!!nickname && game.state.attempts > 0}
+          settings={settings}
           onStart={startGame}
           onClose={nickname ? () => setShowInfo(false) : undefined}
         />

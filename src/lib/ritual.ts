@@ -18,6 +18,7 @@
 // =========================================================
 
 import type { AttemptResult } from './types';
+import { tapsWord } from './plural';
 
 export type RitualSchool = 'cold' | 'hot' | 'mixed';
 
@@ -242,15 +243,24 @@ export function displaySignature(r: RitualStats): string | null {
   return r.signature ? formatPreamble(r.signature) : null;
 }
 
-/** Один рядок-вердикт про ритуал за цифрами — для фінального екрана. */
+/** Один рядок-вердикт про ритуал за цифрами — для фінального екрана.
+ * Порівняння — з тицями без ритуалу, а коли їх замало (чистий ритуаліст) —
+ * з очікуванням (luck 50). Градація: помітно / трохи / однаково. */
 export function ritualVerdict(r: RitualStats): string {
-  if (r.switches === 0) return 'Ритуалу не було — тиснув основну без преамбули. Скептик або просто поспішав.';
-  const sig = displaySignature(r) ? `‹${displaySignature(r)}›` : 'свій ритуал';
-  if (r.ritual.n < 5 || r.plain.n < 5) {
-    return `Замала вибірка (${r.ritual.n} ритуальних тиців) — ГВЧ ще не зрозумів, чого ти від нього хочеш.`;
+  if (r.switches === 0) return 'Ритуалу не було: тиснув основну без прогріву на підставній. Скептик — або просто нетерплячий.';
+  const sig = displaySignature(r);
+  const after = sig ? `Після ‹${sig}›` : 'Після ритуалу';
+  if (r.ritual.n < 5) {
+    return `Замала вибірка: ${r.ritual.n} ${tapsWord(r.ritual.n)} з ритуалом. ГВЧ ще навіть не помітив, що ти чогось від нього хочеш.`;
   }
-  const delta = (r.ritual.luck ?? 50) - (r.plain.luck ?? 50);
-  if (delta >= 20) return `Після ${sig} справді заходило краще (${r.ritual.luck} проти ${r.plain.luck}). Не кажи статистикам.`;
-  if (delta <= -20) return `Без ритуалу було б краще (${r.plain.luck} проти ${r.ritual.luck}). ГВЧ тролить тебе особисто.`;
-  return `Після ${sig} — те саме, що й без нього (${r.ritual.luck} проти ${r.plain.luck}). Але ж приємно.`;
+  const hasControl = r.plain.n >= 5 && r.plain.luck !== null;
+  const a = r.ritual.luck ?? 50;
+  const b = hasControl ? r.plain.luck! : 50;
+  const nums = hasControl ? `(${a} проти ${b} без ритуалу)` : `(${a} при очікуваних 50)`;
+  const delta = a - b;
+  if (delta >= 20) return `${after} прокало помітно частіше ${nums}. Статистика каже «збіг». Ти кажеш, що статистика не точила.`;
+  if (delta >= 8) return `${after} прокало трохи частіше ${nums} — у межах шуму, але віра тримається.`;
+  if (delta <= -20) return `${after} прокало гірше, ніж без нього ${nums}. ГВЧ побачив ритуал і зробив навпаки.`;
+  if (delta <= -8) return `${after} прокало трохи гірше ${nums} — у межах шуму, але осад лишився.`;
+  return `${after} і без нього — одне й те саме ${nums}. Ритуал нічого не міняє, але тиснути з ним приємніше.`;
 }

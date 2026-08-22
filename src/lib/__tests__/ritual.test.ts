@@ -1,6 +1,37 @@
 import { describe, it, expect } from 'vitest';
-import { computeRitualStats, displaySignature, formatPreamble } from '../ritual';
+import { computeRitualStats, displaySignature, formatPreamble, ritualVerdict } from '../ritual';
+import { plural } from '../plural';
 import { seqHistory, rep, type Step } from './helpers';
+
+describe('plural — українське відмінювання', () => {
+  it('1/2/5/11/21/112', () => {
+    const w = (n: number) => plural(n, 'спроба', 'спроби', 'спроб');
+    expect([1, 2, 5, 11, 21, 112, 104].map(w)).toEqual(['спроба', 'спроби', 'спроб', 'спроб', 'спроба', 'спроб', 'спроби']);
+  });
+});
+
+describe('ritualVerdict — граматика і градація', () => {
+  it('без сигнатури — "Після ритуалу", а не "Після свій ритуал"', () => {
+    // 6 тиців із різними преамбулами (сигнатури нема), пила на a
+    const steps: Step[] = [];
+    const pres = ['-', '+', '--', '+-', '-+', '---'];
+    pres.forEach((pre, i) => {
+      for (const ch of pre) steps.push(['mirage', ch === '+', 'b']);
+      steps.push(['world', i % 2 === 0, 'a']);
+    });
+    const v = ritualVerdict(computeRitualStats(seqHistory(steps)));
+    expect(v).not.toMatch(/свій ритуал/);
+    expect(v).toMatch(/^Після /);
+  });
+
+  it('різниця 13 пунктів — "трохи", а не "одне й те саме"', () => {
+    const r = computeRitualStats([]);
+    const fake = { ...r, switches: 10, ritual: { n: 10, successes: 6, expected: 5, luck: 58 }, plain: { n: 10, successes: 5, expected: 5.5, luck: 45 } };
+    expect(ritualVerdict(fake)).toMatch(/трохи частіше/);
+    expect(ritualVerdict({ ...fake, ritual: { ...fake.ritual, luck: 47 } })).toMatch(/одне й те саме/);
+    expect(ritualVerdict({ ...fake, ritual: { ...fake.ritual, luck: 80 } })).toMatch(/помітно частіше/);
+  });
+});
 
 describe('computeRitualStats — преамбули', () => {
   it('преамбула = результати підставної від попереднього тицю основної', () => {

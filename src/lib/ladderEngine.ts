@@ -27,6 +27,9 @@ import { labelsFor, tierFor } from './criticalMoments';
 import { otherSlot, type AttemptResult, type ItemSlot } from './types';
 
 export const MAX_ATTEMPTS = 200;
+/** "Скинути прогрес" розблоковується лише після стількох спроб — щоб не
+ * можна було дешево перекидати невдалий старт забігу. */
+export const MIN_ATTEMPTS_FOR_RESET = 150;
 
 export type { AttemptResult };
 

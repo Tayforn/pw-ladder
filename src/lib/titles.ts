@@ -18,6 +18,7 @@ import { otherSlot, type AttemptResult, type ItemSlot } from './types';
 import { MAJOR_SWAP_LEVEL, winnerHistory, type SessionStats } from './sessionStats';
 import type { RngProfile } from './rngProfile';
 import { formatPreamble, type RitualStats } from './ritual';
+import { tapsWord, timesWord, stonesWord, attemptsWord } from './plural';
 
 export const TITLE_CONFIG = {
   rngGod: { minPeak: 8, maxAttempts: 60 },
@@ -427,7 +428,7 @@ export function evaluateTitles(
   const enoughSamples = r.ritual.n >= cfg.faith.minSamples;
 
   if (r.switches >= cfg.shaman.minSwitches) {
-    add('SHAMAN', 'ШАМАН', `${r.switches} ритуальних тиців, ${r.decoyAttempts} спроб спалено на підставній заради віри.`);
+    add('SHAMAN', 'ШАМАН', `${r.switches} ${tapsWord(r.switches)} з ритуалом і ${r.decoyAttempts} ${attemptsWord(r.decoyAttempts)} спалено на підставну заради віри.`);
   }
 
   // КУЛЬТ — за СУФІКСНОЮ сигнатурою: "чекаю три мінуси" в даних виглядає як
@@ -443,19 +444,19 @@ export function evaluateTitles(
 
   if (enoughSamples && delta !== null) {
     if (delta >= cfg.faith.minDelta) {
-      add('FAITH_WORKS', 'ВІРА ПРАЦЮЄ', `Удача після ритуалу ${r.ritual.luck} проти ${baselineText}. Статистика каже "випадковість". Ти кажеш, що статистика не грала.`);
+      add('FAITH_WORKS', 'ВІРА ПРАЦЮЄ', `Удача з ритуалом ${r.ritual.luck} проти ${baselineText}. Статистика каже «збіг». Ти кажеш, що статистика не точила.`);
     } else if (delta <= -cfg.faith.minDelta) {
-      add('SCIENCE_WINS', 'НАУКА ПЕРЕМОГЛА', `Удача після ритуалу ${r.ritual.luck} проти ${baselineText}. Ритуал не просто не допоміг — він образився.`);
+      add('SCIENCE_WINS', 'НАУКА ПЕРЕМОГЛА', `Удача з ритуалом ${r.ritual.luck} проти ${baselineText}. ГВЧ побачив ритуал і зробив навпаки.`);
     } else if (Math.abs(delta) <= cfg.placebo.maxDelta && r.ritual.n >= cfg.placebo.minSamples) {
-      add('PLACEBO', 'ПЛАЦЕБО', `Удача після ритуалу ${r.ritual.luck} проти ${baselineText}. Працює рівно так само, як і нічого.`);
+      add('PLACEBO', 'ПЛАЦЕБО', `Удача з ритуалом ${r.ritual.luck} проти ${baselineText}. Працює рівно так само, як і нічого, — зате з душею.`);
     }
   }
 
   if (r.switches >= cfg.schoolAdept.minSwitches && r.school === 'cold') {
-    add('COLD_ADEPT', 'АДЕПТ ХОЛОДНОЇ СЕРІЇ', `Тиснеш основну після мінусів підставної${sig ? ` (улюблено ‹${sig}›)` : ''}. "Зараз точно має зайти".`);
+    add('COLD_ADEPT', 'АДЕПТ ХОЛОДНОЇ СЕРІЇ', `Тиць основною — тільки після мінусів на підставній${sig ? ` (улюблене ‹${sig}›)` : ''}. «Ну зараз точно прокне».`);
   }
   if (r.switches >= cfg.schoolAdept.minSwitches && r.school === 'hot') {
-    add('HOT_ADEPT', 'АДЕПТ ГАРЯЧОЇ РУКИ', `Тиснеш основну після плюсів підставної${sig ? ` (улюблено ‹${sig}›)` : ''}. "ГВЧ розігрівся".`);
+    add('HOT_ADEPT', 'АДЕПТ ГАРЯЧОЇ РУКИ', `Тиць основною — одразу після плюса на підставній${sig ? ` (улюблене ‹${sig}›)` : ''}. «Рука гаряча, заходимо».`);
   }
 
   if (r.maxAlternation >= cfg.metronome.minAlternation) {
@@ -467,7 +468,7 @@ export function evaluateTitles(
   }
 
   if (sig && sig.length === 1 && r.switches >= cfg.impatient.minSwitches) {
-    add('IMPATIENT', 'НЕТЕРПЛЯЧКА', `Улюблений ритуал — один-єдиний ‹${sig}›. Одна спроба на підставній — і вже "пора".`);
+    add('IMPATIENT', 'НЕТЕРПЛЯЧКА', `Улюблений ритуал — один-єдиний ‹${sig}›. Один тиць на підставній — і вже «пора».`);
   }
 
   // Лише за СТАБІЛЬНИМ суфіксом і з >= 2 змінами знаку: "+---" — це "чекаю
@@ -479,19 +480,19 @@ export function evaluateTitles(
   }
 
   if (r.itemSwitches >= cfg.twoChairs.minItemSwitches) {
-    add('TWO_CHAIRS', 'ДВА СТІЛЬЦІ', `${r.itemSwitches} перемикань між предметами за забіг.`);
+    add('TWO_CHAIRS', 'ДВА СТІЛЬЦІ', `${r.itemSwitches} ${timesWord(r.itemSwitches)} перестрибував між предметами за забіг. Визначся вже.`);
   }
 
   if (r.betrayals > 0) {
-    add('RITUAL_BETRAYAL', 'ЗРАДА РИТУАЛУ', `${r.betrayals} раз(и) після ритуалу основна злетіла в нуль з +5 і вище. ГВЧ бачив твій ритуал. ГВЧ не вразило.`);
+    add('RITUAL_BETRAYAL', 'ЗРАДА РИТУАЛУ', `${r.betrayals} ${timesWord(r.betrayals)} після прогріву підставної основна злетіла в нуль з +5 і вище. ГВЧ бачив твій ритуал. ГВЧ не вразило.`);
   }
 
   if (r.maxRitualFailRun >= cfg.overheat.minRitualFailRun) {
-    add('OVERHEAT', 'ПЕРЕГРІВ', `${r.maxRitualFailRun} ритуальних тиців поспіль — усі в мінус. ГВЧ не читав інструкцію.`);
+    add('OVERHEAT', 'ПЕРЕГРІВ', `${r.maxRitualFailRun} ${tapsWord(r.maxRitualFailRun)} з ритуалом поспіль — і всі в мінус. ГВЧ інструкцію не читав.`);
   }
 
   if (r.switches >= cfg.whisperer.minSwitches && r.ritual.luck !== null && r.ritual.luck >= cfg.whisperer.minRitualLuck) {
-    add('RNG_WHISPERER', 'ГВЧ-ШЕПОТУН', `${r.switches} ритуальних тиців з удачею ${r.ritual.luck}/100. Він тебе чує.`);
+    add('RNG_WHISPERER', 'ГВЧ-ШЕПОТУН', `${r.switches} ${tapsWord(r.switches)} з ритуалом і удача ${r.ritual.luck}/100. Він тебе чує.`);
   }
 
   if (stats.attemptsUsed >= cfg.skeptic.minAttempts && r.decoyAttempts === 0) {
@@ -499,7 +500,7 @@ export function evaluateTitles(
   }
 
   if (stats.attemptsUsed >= cfg.boughtAndForgot.minAttempts && r.decoyAttempts >= 1 && r.decoyAttempts <= cfg.boughtAndForgot.maxDecoyAttempts) {
-    add('BOUGHT_AND_FORGOT', 'КУПИВ І ЗАБУВ', `Підставна торкнута ${r.decoyAttempts} раз(и) за ${stats.attemptsUsed} спроб. Лежить у сумці для спокою.`);
+    add('BOUGHT_AND_FORGOT', 'КУПИВ І ЗАБУВ', `Підставну торкнув ${r.decoyAttempts} ${timesWord(r.decoyAttempts)} за ${stats.attemptsUsed} ${attemptsWord(stats.attemptsUsed)}. Лежить у сумці для спокою.`);
   }
 
   if (stats.majorSwaps >= cfg.castlingCarousel.minMajorSwaps) {
@@ -514,7 +515,7 @@ export function evaluateTitles(
   }
 
   if (r.decoyHitZero >= cfg.sacrificialLamb.minDecoyHitZero) {
-    add('SACRIFICIAL_LAMB', 'ЖЕРТОВНЕ ЯГНЯ', `Підставна ${r.decoyHitZero} разів з'їхала в нуль. Вона нічого не зробила, щоб це заслужити.`);
+    add('SACRIFICIAL_LAMB', 'ЖЕРТОВНЕ ЯГНЯ', `Підставна ${r.decoyHitZero} ${timesWord(r.decoyHitZero)} з'їхала в нуль. Вона нічого не зробила, щоб це заслужити.`);
   }
 
   if (stats.peakLevel >= cfg.doubleAgent.minPeak && stats.decoy.peakLevel >= cfg.doubleAgent.minPeak) {
@@ -522,7 +523,7 @@ export function evaluateTitles(
   }
 
   if (r.decoyPaid >= cfg.decoyPricier.minDecoyPaid && r.decoyPaid > r.mainPaid) {
-    add('DECOY_PRICIER', 'ПІДСТАВНА ДОРОЖЧА', `${r.decoyPaid} платних каменів на підставну проти ${r.mainPaid} на основну. Хтось плутає пріоритети.`);
+    add('DECOY_PRICIER', 'ПІДСТАВНА ДОРОЖЧА', `${r.decoyPaid} ${stonesWord(r.decoyPaid)} на підставну проти ${r.mainPaid} на основну. Хтось плутає пріоритети.`);
   }
 
   if (r.decoyAttempts >= cfg.whiteIron.minDecoyAttempts && r.decoyPeak <= cfg.whiteIron.maxDecoyPeak) {

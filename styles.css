@@ -679,3 +679,12 @@ body.modal-open { overflow: hidden; }
   .sim-items { grid-template-columns: 1fr; }
   .hist-row { grid-template-columns: 22px 96px 1fr 22px; }
 }
+
+/* ── Правила (InfoPopup) ──────────────────────────────────── */
+.rules { display: flex; flex-direction: column; gap: 12px; font-size: 13.5px; line-height: 1.5; }
+.rules section { display: flex; flex-direction: column; gap: 4px; }
+.rules h4 { margin: 0; font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-3); }
+.rules p { margin: 0; }
+.rules ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.rules li::marker { color: var(--text-mute); }
+.rules .field { margin-top: 4px; }

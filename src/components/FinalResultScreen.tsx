@@ -38,6 +38,16 @@ const PROFILE_LABELS: Record<keyof Omit<RngProfile, 'archetype' | 'expectedSucce
   luck: 'Удача',
 };
 
+/** Пояснення кожного виміру RNG-профілю — підказка при наведенні. */
+const PROFILE_HINTS: Record<keyof typeof PROFILE_LABELS, string> = {
+  peakPerformance: 'Наскільки близько до +12 дійшов пік основного предмета.',
+  consistency: 'Штраф за сумарно втрачені рівні відносно кількості спроб: менше падінь — вище.',
+  aggression: 'Середня ставка на спробу — скільки рівнів згоріло б при провалі: міраж/небеска ставлять увесь рівень, підземка — 1, світобудова — 0. 1.5 рівня в середньому = 100.',
+  recovery: 'Наскільки повно відігрався після найбільшого падіння.',
+  streakPower: 'Найдовша серія успіхів поспіль; 6 і більше = 100.',
+  luck: 'Факт успіхів проти очікуваних за шансами (сума p кожної спроби): 50 — рівно як мало бути, вище — щастило.',
+};
+
 export default function FinalResultScreen({
   nickname,
   history,
@@ -162,7 +172,7 @@ export default function FinalResultScreen({
           <div className="rng-profile-grid">
             {(Object.keys(PROFILE_LABELS) as Array<keyof typeof PROFILE_LABELS>).map((key) => (
               <div key={key} className="rng-profile-row">
-                <span className="rng-profile-label">{PROFILE_LABELS[key]}</span>
+                <span className="rng-profile-label" title={PROFILE_HINTS[key]}>{PROFILE_LABELS[key]}</span>
                 <div className="rng-profile-bar">
                   <div className="rng-profile-bar-fill" style={{ width: profile[key] + '%' }} />
                 </div>

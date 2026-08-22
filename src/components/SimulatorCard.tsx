@@ -9,32 +9,18 @@
 // =========================================================
 
 import { useState } from 'react';
-import { costFor, ladderLevel, MAX_ATTEMPTS, useLadderGame } from '../lib/ladderEngine';
+import { costFor, ladderLevel, MAX_ATTEMPTS, MIN_ATTEMPTS_FOR_RESET, useLadderGame } from '../lib/ladderEngine';
 import { MAX_LEVEL, RATES, STONE_LABEL, type StoneMethod } from '../data/refineRates';
 import { LABEL_TEXT, TIER_LABEL } from '../lib/criticalMoments';
 import { isBetterResult, type LadderEntry, type LadderSettings } from '../data/ladder';
 import { otherSlot, type ItemSlot } from '../lib/types';
+import { attemptsWord, minusWord } from '../lib/plural';
 import AttemptHistoryList from './AttemptHistoryList';
 
 type Game = ReturnType<typeof useLadderGame>;
 
-/** "Скинути прогрес" розблоковується лише після 150 спроб — щоб не можна
- * було дешево перекидати невдалий старт забігу. (Внесення в ладдер більше
- * НЕ скидає лічильники, якщо результат не зараховано — тож і через нього
- * дешевого ре-роллу немає, див. doSubmit в App.tsx.) */
-const MIN_ATTEMPTS_FOR_RESET = 150;
 /** Від скількох мінусів поспіль на підставній показуємо "ГВЧ прогрітий?". */
 const RITUAL_HINT_STREAK = 3;
-
-/** Українське відмінювання "спроба/спроби/спроб" за числівником n. */
-function attemptsWord(n: number): string {
-  const mod100 = n % 100;
-  const mod10 = n % 10;
-  if (mod100 >= 11 && mod100 <= 14) return 'спроб';
-  if (mod10 === 1) return 'спроба';
-  if (mod10 >= 2 && mod10 <= 4) return 'спроби';
-  return 'спроб';
-}
 
 const STONES: Array<{ method: Exclude<StoneMethod, 'mirage'>; label: string; cls: string; failNote: string }> = [
   { method: 'sky', label: 'Небеска', cls: 'sky', failNote: 'провал → рівень 0' },
@@ -146,7 +132,7 @@ export default function SimulatorCard({
 
       {decoyColdTail >= RITUAL_HINT_STREAK && (
         <div className="sim-ritual-banner">
-          🔥 ГВЧ прогрітий? <b>{decoyColdTail}</b> {decoyColdTail === 1 ? 'мінус' : 'мінуси'} поспіль на підставній.
+          🔥 ГВЧ прогрітий? <b>{decoyColdTail}</b> {minusWord(decoyColdTail)} поспіль на підставній.
           Вирішальний тиць — за тобою. <span className="muted">(Шанси, звісно, ті самі.)</span>
         </div>
       )}

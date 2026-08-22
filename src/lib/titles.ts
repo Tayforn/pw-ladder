@@ -1,18 +1,23 @@
 // =========================================================
-// 33 детерміновані титули — оцінюються з готової історії забігу
-// (AttemptResult[]) + похідної статистики/RNG-профілю. Нічого тут не
-// впливає на сам кидок RNG, лише читає готовий результат.
+// Детерміновані титули — оцінюються з готової історії забігу
+// (AttemptResult[]) + похідної статистики/RNG-профілю/ритуал-аналізу.
+// Нічого тут не впливає на сам кидок RNG, лише читає готовий результат.
+//
+// ДВА ПРЕДМЕТИ: титули про РІВНІ (пік, падіння, серії на одному рівні,
+// камп на висоті) читають історію предмета-переможця (`main`); титули про
+// ГВЧ (стріки, клатч, удача) — всю послідовність; ритуальні — RitualStats.
 //
 // Усі порогові значення — в TITLE_CONFIG. Пороги відкалібровані симуляцією
 // (src/lib/__tests__/calibration.test.ts): кожен титул реально досяжний за
-// 200 спроб чесної гри — попередні значення на кшталт "пік +12 за 40
-// спроб" мали ймовірність ~1e-8 і були мертвим кодом.
+// 200 спроб чесної гри. Частина ритуальних титулів має ДИНАМІЧНУ назву —
+// з особистою сигнатурою гравця (наприклад "КУЛЬТ ‹−−+›").
 // =========================================================
 
 import { STONE_LABEL } from '../data/refineRates';
-import type { AttemptResult } from './types';
-import type { SessionStats } from './sessionStats';
+import { otherSlot, type AttemptResult, type ItemSlot } from './types';
+import { MAJOR_SWAP_LEVEL, winnerHistory, type SessionStats } from './sessionStats';
 import type { RngProfile } from './rngProfile';
+import { formatPreamble, type RitualStats } from './ritual';
 
 export const TITLE_CONFIG = {
   rngGod: { minPeak: 8, maxAttempts: 60 },
@@ -32,7 +37,6 @@ export const TITLE_CONFIG = {
   stoneCollector: {},
   edgeDancer: { minPeak: 5, minAtPeak: 8 },
   fatalSymmetry: { minAttempts: 20 },
-  // ---- нові ----
   pacifist: { minAttempts: 100 },
   sisyphus: { minLevel: 4, minClimbs: 4 },
   allIn: { minLevel: 6 },
@@ -40,7 +44,6 @@ export const TITLE_CONFIG = {
   hotStart: { minOpeningStreak: 4 },
   lotteryTicket: { maxP: 0.05 },
   phoenix: { minDrop: 4 },
-  // ---- економіка / дисципліна / драма ----
   stratosphere: { minPeak: 9 },
   icarus: { minHeight: 6 },
   darkStar: { maxLuck: 40, minAttempts: 50 },
@@ -49,6 +52,27 @@ export const TITLE_CONFIG = {
   coolHead: { minPeak: 5 },
   alchemist: { minLevel: 3, minCount: 3 },
   marketingVictim: {},
+  // ---- ритуал "підставної шмотки" ----
+  shaman: { minSwitches: 10 },
+  cult: { minSwitches: 8, minOrthodoxy: 80 },
+  eclectic: { minDistinct: 8 },
+  faith: { minSamples: 10, minDelta: 20 },
+  placebo: { minSamples: 15, maxDelta: 5 },
+  schoolAdept: { minSwitches: 8 },
+  metronome: { minAlternation: 20 },
+  patientShaman: { minColdStreak: 6 },
+  impatient: { minSwitches: 8 },
+  combinator: { minLength: 4 },
+  twoChairs: { minItemSwitches: 50 },
+  overheat: { minRitualFailRun: 10 },
+  whisperer: { minSwitches: 20, minRitualLuck: 65 },
+  skeptic: { minAttempts: 150 },
+  boughtAndForgot: { minAttempts: 150, maxDecoyAttempts: 2 },
+  sacrificialLamb: { minDecoyHitZero: 60 },
+  castlingCarousel: { minMajorSwaps: 3 },
+  doubleAgent: { minPeak: 5 },
+  decoyPricier: { minDecoyPaid: 5 },
+  whiteIron: { minDecoyAttempts: 30, maxDecoyPeak: 1 },
 };
 
 export interface TitleResult {
@@ -148,8 +172,7 @@ function setbacksFrom(history: AttemptResult[], floor: number): number {
 }
 
 /** СІЗІФ: скільки разів піднявся НА той самий рівень L (успіх із L-1 на L),
- * максимум по всіх L >= minLevel. Щоб піднятись на L k разів, між підйомами
- * неминуче падав нижче — камінь щоразу котився вниз. */
+ * максимум по всіх L >= minLevel. */
 function sisyphusClimbs(history: AttemptResult[], minLevel: number): { climbs: number; level: number } {
   const counts = new Map<number, number>();
   for (const h of history) {
@@ -162,8 +185,7 @@ function sisyphusClimbs(history: AttemptResult[], minLevel: number): { climbs: n
   return best;
 }
 
-/** ФЕНІКС: згорів у +0 з рівня >= minDrop, а ПІЗНІШЕ піднявся ще вище, ніж
- * був до падіння. Повертає найкращий такий випадок. */
+/** ФЕНІКС: згорів у +0 з рівня >= minDrop, а ПІЗНІШЕ піднявся ще вище. */
 function phoenixRise(history: AttemptResult[], minDrop: number): { from: number; to: number } | null {
   let best: { from: number; to: number } | null = null;
   for (let i = 0; i < history.length; i++) {
@@ -180,15 +202,37 @@ function phoenixRise(history: AttemptResult[], minDrop: number): { from: number;
   return best;
 }
 
+/** ПРОМОУШН: після першої ЗНАЧУЩОЇ рокіровки (новий основний на +3 і
+ * вище) він же встановив новий ЗАГАЛЬНИЙ пік забігу. */
+function promotionAfterSwap(history: AttemptResult[]): { level: number } | null {
+  const levels: Record<ItemSlot, number> = { a: 0, b: 0 };
+  let mainSlot: ItemSlot = 'a';
+  let swapped = false;
+  let overallPeak = 0;
+  for (const h of history) {
+    levels[h.item] = h.after;
+    if (swapped && h.item === mainSlot && h.after > overallPeak) return { level: h.after };
+    overallPeak = Math.max(overallPeak, h.after);
+    if (levels[otherSlot(mainSlot)] > levels[mainSlot]) {
+      mainSlot = otherSlot(mainSlot);
+      if (levels[mainSlot] >= MAJOR_SWAP_LEVEL) swapped = true;
+    }
+  }
+  return null;
+}
+
 export function evaluateTitles(
   history: AttemptResult[],
   stats: SessionStats,
   profile: RngProfile,
   currentRecordLevel: number | null,
+  ritual: RitualStats,
   cfg: typeof TITLE_CONFIG = TITLE_CONFIG,
 ): { qualified: TitleResult[]; primary: TitleResult | null } {
   const qualified: TitleResult[] = [];
   const add = (id: string, name: string, evidence: string) => qualified.push({ id, name, evidence });
+  /** Історія предмета-переможця — для всього, що читає рівні. */
+  const main = winnerHistory(history);
 
   if (stats.peakLevel >= cfg.rngGod.minPeak && stats.peakAttempt > 0 && stats.peakAttempt <= cfg.rngGod.maxAttempts) {
     add('RNG_GOD', 'RNG GOD', `Дійшов до +${stats.peakLevel} усього за ${stats.peakAttempt} спроб.`);
@@ -198,7 +242,7 @@ export function evaluateTitles(
     add('THE_CHOSEN_ONE', 'ОБРАНИЙ', `Досяг +${stats.peakLevel} — це рекорд ладдера.`);
   }
 
-  const dragonSetbacks = setbacksFrom(history, cfg.dragon.setbackFloor);
+  const dragonSetbacks = setbacksFrom(main, cfg.dragon.setbackFloor);
   if (
     stats.peakLevel >= cfg.dragon.minPeak &&
     dragonSetbacks >= cfg.dragon.minSetbacks &&
@@ -207,7 +251,7 @@ export function evaluateTitles(
     add('THE_DRAGON', 'ДРАКОН', `Досяг +${stats.peakLevel}, пережив ${dragonSetbacks} падінь із +${cfg.dragon.setbackFloor} і вище — і все одно фінішував на +${stats.finalLevel}.`);
   }
 
-  const rise = phoenixRise(history, cfg.phoenix.minDrop);
+  const rise = phoenixRise(main, cfg.phoenix.minDrop);
   if (rise) {
     add('PHOENIX', 'ФЕНІКС', `Згорів із +${rise.from} у нуль — і піднявся до +${rise.to}.`);
   }
@@ -236,7 +280,7 @@ export function evaluateTitles(
   }
 
   const sacrifice = mostUnluckyRun(
-    collectFailRuns(history, true),
+    collectFailRuns(main, true),
     cfg.bloodSacrifice.minSameLevelFailStreak,
     cfg.bloodSacrifice.maxStreakProb,
   );
@@ -255,7 +299,7 @@ export function evaluateTitles(
     add('VICTIM_OF_RNG', 'ЖЕРТВА RNG', `${stats.attemptsUsed} спроб — і пік усього +${stats.peakLevel}.`);
   }
 
-  const sisyphus = sisyphusClimbs(history, cfg.sisyphus.minLevel);
+  const sisyphus = sisyphusClimbs(main, cfg.sisyphus.minLevel);
   if (sisyphus.climbs >= cfg.sisyphus.minClimbs) {
     add('SISYPHUS', 'СІЗІФ', `${sisyphus.climbs} разів викочував камінь на +${sisyphus.level} — і він щоразу котився вниз.`);
   }
@@ -265,7 +309,7 @@ export function evaluateTitles(
     add('WILD_CARD', 'ДИКА КАРТА', `Найбільше падіння −${stats.biggestDrop} і стрік із ${stats.longestSuccessStreak} перемог — усе в одному забігу.`);
   }
 
-  const allIn = history.find((h) => h.method === 'mirage' && h.before >= cfg.allIn.minLevel);
+  const allIn = main.find((h) => h.method === 'mirage' && h.before >= cfg.allIn.minLevel);
   if (allIn) {
     add('ALL_IN', 'ВА-БАНК', allIn.success
       ? `Міраж на +${allIn.before} — і він зайшов. Казино в програші.`
@@ -280,7 +324,7 @@ export function evaluateTitles(
     add('THE_GAMBLER', 'ГЕМБЛЕР', `Агресія ${profile.aggression}/100 — у середньому ставив на кін ${((profile.aggression * 1.5) / 100).toFixed(1)} рівня за спробу.`);
   }
 
-  const unbreakableLen = longestAtOrAbove(history, cfg.unbreakable.floor);
+  const unbreakableLen = longestAtOrAbove(main, cfg.unbreakable.floor);
   if (unbreakableLen >= cfg.unbreakable.minLength) {
     add('THE_UNBREAKABLE', 'НЕЗЛАМНИЙ', `${unbreakableLen} спроб поспіль на +${cfg.unbreakable.floor} і вище.`);
   }
@@ -309,7 +353,7 @@ export function evaluateTitles(
     add('SLOW_AND_STEADY', 'ТИХОХІД', `Дійшов до +${stats.peakLevel} без жодного падіння більше −${cfg.slowAndSteady.maxDrop}.`);
   }
 
-  const atPeak = history.filter((h) => h.before === stats.peakLevel).length;
+  const atPeak = main.filter((h) => h.before === stats.peakLevel).length;
   if (stats.peakLevel >= cfg.edgeDancer.minPeak && atPeak >= cfg.edgeDancer.minAtPeak) {
     add('EDGE_DANCER', 'ТАНЦЮРИСТ НА МЕЖІ', `${atPeak} спроб на власному піку +${stats.peakLevel} — крок від рекорду, крок від прірви.`);
   }
@@ -327,14 +371,13 @@ export function evaluateTitles(
     add('STRATOSPHERE', 'СТРАТОСФЕРА', `Побував на +${stats.peakLevel} — там, куди більшість навіть не зазирає.`);
   }
 
-  // ІКАР: встановив НОВИЙ пік забігу — і наступною ж спробою згорів у нуль.
-  // Вимога "новий пік" принципова: без неї будь-який провал після чергового
-  // підйому на вже бачену висоту робив би Ікаром 80%+ міражистів.
+  // ІКАР: встановив НОВИЙ пік предмета — і наступною ж спробою НА НЬОМУ
+  // згорів у нуль.
   let icarusLevel = 0;
   let runningPeak = 0;
-  for (let i = 0; i < history.length - 1 && !icarusLevel; i++) {
-    const h = history[i];
-    const next = history[i + 1];
+  for (let i = 0; i < main.length - 1 && !icarusLevel; i++) {
+    const h = main[i];
+    const next = main[i + 1];
     if (h.success && h.after > runningPeak && h.after >= cfg.icarus.minHeight && !next.success && next.after === 0) {
       icarusLevel = h.after;
     }
@@ -353,7 +396,6 @@ export function evaluateTitles(
     add('DOUBLE_BOTTOM', 'ПОДВІЙНЕ ДНО', `${hugeDrops} падінь на ${cfg.doubleBottom.minDrop}+ рівнів за один забіг.`);
   }
 
-  // Зупинився рівно на піку vs грав далі й усе злив — взаємовиключні.
   if (stats.peakLevel >= cfg.coolHead.minPeak && stats.finalLevel === stats.peakLevel) {
     add('COOL_HEAD', 'ХОЛОДНА ГОЛОВА', `Зупинився рівно на піку +${stats.peakLevel}. Рідкісна дисципліна.`);
   }
@@ -366,21 +408,140 @@ export function evaluateTitles(
     add('ALCHEMIST', 'АЛХІМІК', `${worldWins} успіхи світобудови на +${cfg.alchemist.minLevel} і вище — кожен із шансом ≤ 4%.`);
   }
 
-  // Небеска/підземка на +0: провал і так лишає в нулі, міраж робить те саме
-  // безкоштовно — класична пастка для новачка.
   const badBuy = history.find((h) => (h.method === 'sky' || h.method === 'under') && h.before === 0);
   if (badBuy) {
     add('MARKETING_VICTIM', 'ЖЕРТВА МАРКЕТИНГУ', `Купив «${STONE_LABEL[badBuy.method]}» на +0, де міраж робить те саме безкоштовно.`);
   }
 
+  // =========================================================
+  // Ритуал "підставної шмотки"
+  // =========================================================
+  const r = ritual;
+  const sig = r.signature ? formatPreamble(r.signature) : null;
+  // Контрольна група — тиці без ритуалу; у чистого ритуаліста її немає,
+  // тоді порівнюємо з очікуванням (luck і так нормований до 50).
+  const hasControl = r.plain.n >= cfg.faith.minSamples && r.plain.luck !== null;
+  const baseline = hasControl ? r.plain.luck! : 50;
+  const baselineText = hasControl ? `${baseline} без нього` : 'очікуваних 50';
+  const delta = r.ritual.luck !== null ? r.ritual.luck - baseline : null;
+  const enoughSamples = r.ritual.n >= cfg.faith.minSamples;
+
+  if (r.switches >= cfg.shaman.minSwitches) {
+    add('SHAMAN', 'ШАМАН', `${r.switches} ритуальних тиців, ${r.decoyAttempts} спроб спалено на підставній заради віри.`);
+  }
+
+  // КУЛЬТ — за СУФІКСНОЮ сигнатурою: "чекаю три мінуси" в даних виглядає як
+  // "усі преамбули закінчуються на −−−" (префікс щоразу інший).
+  if (r.suffixSignature && r.switches >= cfg.cult.minSwitches && r.suffixShare >= cfg.cult.minOrthodoxy) {
+    const suf = formatPreamble(r.suffixSignature);
+    add('CULT', `КУЛЬТ ‹${suf}›`, `${r.suffixShare}% тиців — після ‹${suf}› на підставній. Висічено в камені.`);
+  }
+
+  if (r.distinctPreambles >= cfg.eclectic.minDistinct && !r.suffixSignature) {
+    add('ECLECTIC', 'ЕКЛЕКТИК', `${r.distinctPreambles} різних ритуалів і жодного сталого. Пробував усе — нічого не працює однаково.`);
+  }
+
+  if (enoughSamples && delta !== null) {
+    if (delta >= cfg.faith.minDelta) {
+      add('FAITH_WORKS', 'ВІРА ПРАЦЮЄ', `Удача після ритуалу ${r.ritual.luck} проти ${baselineText}. Статистика каже "випадковість". Ти кажеш, що статистика не грала.`);
+    } else if (delta <= -cfg.faith.minDelta) {
+      add('SCIENCE_WINS', 'НАУКА ПЕРЕМОГЛА', `Удача після ритуалу ${r.ritual.luck} проти ${baselineText}. Ритуал не просто не допоміг — він образився.`);
+    } else if (Math.abs(delta) <= cfg.placebo.maxDelta && r.ritual.n >= cfg.placebo.minSamples) {
+      add('PLACEBO', 'ПЛАЦЕБО', `Удача після ритуалу ${r.ritual.luck} проти ${baselineText}. Працює рівно так само, як і нічого.`);
+    }
+  }
+
+  if (r.switches >= cfg.schoolAdept.minSwitches && r.school === 'cold') {
+    add('COLD_ADEPT', 'АДЕПТ ХОЛОДНОЇ СЕРІЇ', `Тиснеш основну після мінусів підставної${sig ? ` (улюблено ‹${sig}›)` : ''}. "Зараз точно має зайти".`);
+  }
+  if (r.switches >= cfg.schoolAdept.minSwitches && r.school === 'hot') {
+    add('HOT_ADEPT', 'АДЕПТ ГАРЯЧОЇ РУКИ', `Тиснеш основну після плюсів підставної${sig ? ` (улюблено ‹${sig}›)` : ''}. "ГВЧ розігрівся".`);
+  }
+
+  if (r.maxAlternation >= cfg.metronome.minAlternation) {
+    add('METRONOME', 'МЕТРОНОМ', `${r.maxAlternation} спроб строгого чергування предметів. Тік-так, тік-так.`);
+  }
+
+  if (r.maxColdStreakWaited >= cfg.patientShaman.minColdStreak) {
+    add('PATIENT_SHAMAN', 'ТЕРПЛЯЧИЙ ШАМАН', `Дочекався ${r.maxColdStreakWaited} мінусів поспіль на підставній, перш ніж тицьнути основну.`);
+  }
+
+  if (sig && sig.length === 1 && r.switches >= cfg.impatient.minSwitches) {
+    add('IMPATIENT', 'НЕТЕРПЛЯЧКА', `Улюблений ритуал — один-єдиний ‹${sig}›. Одна спроба на підставній — і вже "пора".`);
+  }
+
+  // Лише за СТАБІЛЬНИМ суфіксом і з >= 2 змінами знаку: "+---" — це "чекаю
+  // три мінуси" з граничним плюсом, а не комбінація; "-+-+" чи "--+-" — так.
+  const combo = r.suffixSignature;
+  const signChanges = combo ? [...combo].filter((c, i) => i > 0 && c !== combo[i - 1]).length : 0;
+  if (combo && combo.length >= cfg.combinator.minLength && signChanges >= 2 && r.switches >= cfg.cult.minSwitches) {
+    add('COMBINATOR', `КОМБІНАТОР ‹${formatPreamble(combo)}›`, `Чекав саме ‹${formatPreamble(combo)}› перед тицем. Це вже не ритуал, це нотний стан.`);
+  }
+
+  if (r.itemSwitches >= cfg.twoChairs.minItemSwitches) {
+    add('TWO_CHAIRS', 'ДВА СТІЛЬЦІ', `${r.itemSwitches} перемикань між предметами за забіг.`);
+  }
+
+  if (r.betrayals > 0) {
+    add('RITUAL_BETRAYAL', 'ЗРАДА РИТУАЛУ', `${r.betrayals} раз(и) після ритуалу основна злетіла в нуль з +5 і вище. ГВЧ бачив твій ритуал. ГВЧ не вразило.`);
+  }
+
+  if (r.maxRitualFailRun >= cfg.overheat.minRitualFailRun) {
+    add('OVERHEAT', 'ПЕРЕГРІВ', `${r.maxRitualFailRun} ритуальних тиців поспіль — усі в мінус. ГВЧ не читав інструкцію.`);
+  }
+
+  if (r.switches >= cfg.whisperer.minSwitches && r.ritual.luck !== null && r.ritual.luck >= cfg.whisperer.minRitualLuck) {
+    add('RNG_WHISPERER', 'ГВЧ-ШЕПОТУН', `${r.switches} ритуальних тиців з удачею ${r.ritual.luck}/100. Він тебе чує.`);
+  }
+
+  if (stats.attemptsUsed >= cfg.skeptic.minAttempts && r.decoyAttempts === 0) {
+    add('SKEPTIC', 'СКЕПТИК', `${stats.attemptsUsed} спроб — і жодної на підставній. Слухав статистику. Нудно, але чесно.`);
+  }
+
+  if (stats.attemptsUsed >= cfg.boughtAndForgot.minAttempts && r.decoyAttempts >= 1 && r.decoyAttempts <= cfg.boughtAndForgot.maxDecoyAttempts) {
+    add('BOUGHT_AND_FORGOT', 'КУПИВ І ЗАБУВ', `Підставна торкнута ${r.decoyAttempts} раз(и) за ${stats.attemptsUsed} спроб. Лежить у сумці для спокою.`);
+  }
+
+  if (stats.majorSwaps >= cfg.castlingCarousel.minMajorSwaps) {
+    add('CASTLING_CAROUSEL', 'КАРУСЕЛЬ РОКІРОВОК', `Основна й підставна мінялись ролями на +${MAJOR_SWAP_LEVEL} і вище ${stats.majorSwaps} рази. Хто тут взагалі основна?`);
+  } else if (stats.majorSwaps >= 1) {
+    add('CASTLING', 'РОКІРОВКА', `Підставна перевищила основну на +${MAJOR_SWAP_LEVEL} і вище й зайняла її місце. Стажер очолив відділ.`);
+  }
+
+  const promo = promotionAfterSwap(history);
+  if (promo) {
+    add('PROMOTION', 'ПРОМОУШН', `Колишня підставна після рокіровки встановила новий пік забігу +${promo.level}.`);
+  }
+
+  if (r.decoyHitZero >= cfg.sacrificialLamb.minDecoyHitZero) {
+    add('SACRIFICIAL_LAMB', 'ЖЕРТОВНЕ ЯГНЯ', `Підставна ${r.decoyHitZero} разів з'їхала в нуль. Вона нічого не зробила, щоб це заслужити.`);
+  }
+
+  if (stats.peakLevel >= cfg.doubleAgent.minPeak && stats.decoy.peakLevel >= cfg.doubleAgent.minPeak) {
+    add('DOUBLE_AGENT', 'ПОДВІЙНИЙ АГЕНТ', `Обидва предмети побували на +${cfg.doubleAgent.minPeak} і вище (+${stats.peakLevel} і +${stats.decoy.peakLevel}).`);
+  }
+
+  if (r.decoyPaid >= cfg.decoyPricier.minDecoyPaid && r.decoyPaid > r.mainPaid) {
+    add('DECOY_PRICIER', 'ПІДСТАВНА ДОРОЖЧА', `${r.decoyPaid} платних каменів на підставну проти ${r.mainPaid} на основну. Хтось плутає пріоритети.`);
+  }
+
+  if (r.decoyAttempts >= cfg.whiteIron.minDecoyAttempts && r.decoyPeak <= cfg.whiteIron.maxDecoyPeak) {
+    add('WHITE_IRON', 'БІЛЕ ЗАЛІЗО', `${r.decoyAttempts} спроб на підставній — і пік +${r.decoyPeak}. Біла зброя від коваля, як і задумано.`);
+  }
+
   // Пріоритет для ПЕРВИННОГО титулу — рідкісні/подієві напочатку.
   const priority = [
-    'THE_CHOSEN_ONE', 'RNG_GOD', 'STRATOSPHERE', 'THE_DRAGON', 'PHOENIX',
-    'ICARUS', 'LOTTERY_TICKET', 'ALCHEMIST', 'CLUTCH_MASTER', 'HOT_START',
+    'THE_CHOSEN_ONE', 'RNG_GOD', 'STRATOSPHERE', 'THE_DRAGON', 'PROMOTION', 'PHOENIX',
+    'ICARUS', 'LOTTERY_TICKET', 'ALCHEMIST', 'FAITH_WORKS', 'SCIENCE_WINS',
+    'RNG_WHISPERER', 'CLUTCH_MASTER', 'RITUAL_BETRAYAL', 'HOT_START',
     'PHOTO_FINISH', 'BLOOD_SACRIFICE', 'THE_CURSED', 'DARK_STAR',
-    'VICTIM_OF_RNG', 'DOUBLE_BOTTOM', 'SISYPHUS', 'WILD_CARD', 'ALL_IN',
-    'GREED', 'COOL_HEAD', 'DEMOLITION_EXPERT', 'THE_GAMBLER',
-    'THE_UNBREAKABLE', 'BLESSED', 'THE_STREAKER', 'PACIFIST', 'THE_GRINDER',
+    'VICTIM_OF_RNG', 'CASTLING_CAROUSEL', 'CASTLING', 'DOUBLE_BOTTOM',
+    'OVERHEAT', 'COMBINATOR', 'CULT', 'SISYPHUS', 'WILD_CARD', 'ALL_IN',
+    'GREED', 'COOL_HEAD', 'DOUBLE_AGENT', 'DEMOLITION_EXPERT', 'THE_GAMBLER',
+    'THE_UNBREAKABLE', 'BLESSED', 'THE_STREAKER', 'PATIENT_SHAMAN',
+    'PLACEBO', 'METRONOME', 'SACRIFICIAL_LAMB', 'SHAMAN', 'COLD_ADEPT',
+    'HOT_ADEPT', 'ECLECTIC', 'IMPATIENT', 'TWO_CHAIRS', 'DECOY_PRICIER',
+    'WHITE_IRON', 'PACIFIST', 'SKEPTIC', 'BOUGHT_AND_FORGOT', 'THE_GRINDER',
     'SLOW_AND_STEADY', 'EDGE_DANCER', 'MARKETING_VICTIM', 'STONE_COLLECTOR',
     'FATAL_SYMMETRY',
   ];

@@ -36,16 +36,19 @@ function trailingFailStreak(priorChrono: AttemptResult[]): number {
   return n;
 }
 
-/** `priorChrono` — усі спроби ДО поточної, від найстарішої до найновішої
- * (без самої поточної спроби). */
+/** `priorChrono` — усі спроби ДО поточної (обох предметів), від найстарішої
+ * до найновішої; `priorSameItem` — лише спроби ТОГО Ж предмета (для міток,
+ * що залежать від рівня: ONE TAP). Стріки/клатч — по всій послідовності,
+ * бо це властивість ГВЧ, а не предмета. */
 export function labelsFor(
   current: { method: AttemptResult['method']; success: boolean; before: number; after: number; p: number },
   priorChrono: AttemptResult[],
+  priorSameItem: AttemptResult[] = priorChrono,
 ): MomentLabel[] {
   const labels: MomentLabel[] = [];
   const prev = priorChrono[priorChrono.length - 1];
 
-  if (current.success && current.before >= 8 && trailingAttemptsAtLevel(priorChrono, current.before) === 0) {
+  if (current.success && current.before >= 8 && trailingAttemptsAtLevel(priorSameItem, current.before) === 0) {
     labels.push('ONE_TAP');
   }
   if (current.success && prev?.success) {

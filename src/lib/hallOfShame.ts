@@ -5,7 +5,7 @@
 // =========================================================
 
 import type { AttemptResult } from './types';
-import { longestSameLevelFailStreak, type SessionStats } from './sessionStats';
+import { longestSameLevelFailStreak, winnerHistory, type SessionStats } from './sessionStats';
 
 export interface ShameEntry {
   title: string;
@@ -20,10 +20,13 @@ const CONFIG = {
   slowMilestoneAttempts: 20,
   unmovableLength: 15,
   basementTrips: 8,
+  decoyWasteAttempts: 40,
 };
 
 export function buildHallOfShame(history: AttemptResult[], stats: SessionStats): ShameEntry[] {
   const entries: ShameEntry[] = [];
+  // Усе, що читає рівні, — по предмету-переможцю.
+  const main = winnerHistory(history);
 
   if (stats.longestFailStreak >= CONFIG.mostCursedFailStreak) {
     entries.push({
@@ -33,7 +36,7 @@ export function buildHallOfShame(history: AttemptResult[], stats: SessionStats):
   }
 
   if (stats.biggestDrop >= CONFIG.bigFall) {
-    const dropAttempt = history.find((h) => h.before - h.after === stats.biggestDrop);
+    const dropAttempt = main.find((h) => h.before - h.after === stats.biggestDrop);
     if (dropAttempt) {
       entries.push({
         title: 'ВЕЛИКЕ ПАДІННЯ',
@@ -42,7 +45,7 @@ export function buildHallOfShame(history: AttemptResult[], stats: SessionStats):
     }
   }
 
-  const sameLevel = longestSameLevelFailStreak(history);
+  const sameLevel = longestSameLevelFailStreak(main);
   if (sameLevel.length >= CONFIG.sameLevelFailStreak) {
     entries.push({
       title: 'КРИВАВЕ ЖЕРТВОПРИНОШЕННЯ',
@@ -50,7 +53,7 @@ export function buildHallOfShame(history: AttemptResult[], stats: SessionStats):
     });
   }
 
-  const milestoneAttempt = history.findIndex((h) => h.after >= CONFIG.slowMilestoneLevel);
+  const milestoneAttempt = main.findIndex((h) => h.after >= CONFIG.slowMilestoneLevel);
   if (milestoneAttempt >= CONFIG.slowMilestoneAttempts) {
     entries.push({
       title: 'ЗАЩО',
@@ -63,6 +66,13 @@ export function buildHallOfShame(history: AttemptResult[], stats: SessionStats):
     entries.push({
       title: 'НЕЗРУШНИЙ',
       line: `${s.length} спроб навколо +${s.level} без реального прогресу, починаючи зі спроби №${s.startAttempt}.`,
+    });
+  }
+
+  if (stats.decoy.attempts >= CONFIG.decoyWasteAttempts && stats.decoy.peakLevel <= 1) {
+    entries.push({
+      title: 'ЦІНА ВІРИ',
+      line: `${stats.decoy.attempts} спроб спалено на підставній, яка так і не побачила +2. Бюджет 200 це пам'ятає.`,
     });
   }
 

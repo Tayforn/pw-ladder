@@ -16,6 +16,7 @@ import type { RngProfile } from '../lib/rngProfile';
 import type { TitleResult } from '../lib/titles';
 import type { ShameEntry } from '../lib/hallOfShame';
 import type { BustedJoke } from '../lib/cheatBusted';
+import { displaySignature, ritualVerdict, SCHOOL_LABEL, type RitualStats } from '../lib/ritual';
 import HistoryGraph from './HistoryGraph';
 import AttemptHistoryList from './AttemptHistoryList';
 
@@ -44,6 +45,7 @@ export default function FinalResultScreen({
   profile,
   titles,
   shame,
+  ritual,
   submitMsg,
   busted,
   runContinues,
@@ -58,6 +60,7 @@ export default function FinalResultScreen({
   profile: RngProfile;
   titles: { qualified: TitleResult[]; primary: TitleResult | null };
   shame: ShameEntry[];
+  ritual: RitualStats;
   submitMsg: string | null;
   busted?: BustedJoke;
   runContinues: boolean;
@@ -169,6 +172,51 @@ export default function FinalResultScreen({
           </div>
 
           <HistoryGraph history={history} />
+
+          {stats.decoy.attempts > 0 && (
+            <>
+              <h4 style={{ margin: '4px 0 0' }}>Підставна</h4>
+              <div className="result-stats-grid">
+                <Stat label="Спроб" value={stats.decoy.attempts} />
+                <Stat label="Успіхів" value={stats.decoy.successes} />
+                <Stat label="Пік" value={'+' + stats.decoy.peakLevel} />
+                <Stat label="Фініш" value={'+' + stats.decoy.finalLevel} />
+                <Stat label="Поїздок у нуль" value={stats.decoy.timesHitZero} />
+                <Stat label="Втрачено рівнів" value={stats.decoy.totalLevelsLost} />
+                <Stat label="Рокіровок" value={stats.roleSwaps} />
+                <Stat label="Ціна віри" value={`${ritual.decoyAttempts} сп.`} />
+              </div>
+            </>
+          )}
+
+          {ritual.switches > 0 && (
+            <>
+              <h4 style={{ margin: '4px 0 0' }}>Ритуал</h4>
+              <div className="result-stats-grid">
+                <Stat label="Твій ритуал" value={displaySignature(ritual) ? `‹${displaySignature(ritual)}›` : '—'} />
+                <Stat label="Школа" value={ritual.school ? SCHOOL_LABEL[ritual.school] : '—'} />
+                <Stat label="Ритуальних тиців" value={ritual.switches} />
+                <Stat label="Ортодоксальність" value={ritual.signature ? ritual.orthodoxy + '%' : '—'} />
+                <Stat label="Сер. преамбула" value={ritual.avgPreamble.toFixed(1)} />
+                <Stat label="Макс. преамбула" value={ritual.maxPreamble} />
+                <Stat label="Різних ритуалів" value={ritual.distinctPreambles} />
+                <Stat label="Перемикань" value={ritual.itemSwitches} />
+              </div>
+              <div className="rng-profile-grid">
+                <div className="rng-profile-row">
+                  <span className="rng-profile-label" title={`${ritual.ritual.successes} із ${ritual.ritual.n}, очікувано ${ritual.ritual.expected.toFixed(1)}`}>З ритуалом</span>
+                  <div className="rng-profile-bar"><div className="rng-profile-bar-fill ritual" style={{ width: (ritual.ritual.luck ?? 0) + '%' }} /></div>
+                  <span className="rng-profile-value">{ritual.ritual.luck ?? '—'}</span>
+                </div>
+                <div className="rng-profile-row">
+                  <span className="rng-profile-label" title={`${ritual.plain.successes} із ${ritual.plain.n}, очікувано ${ritual.plain.expected.toFixed(1)}`}>Без ритуалу</span>
+                  <div className="rng-profile-bar"><div className="rng-profile-bar-fill" style={{ width: (ritual.plain.luck ?? 0) + '%' }} /></div>
+                  <span className="rng-profile-value">{ritual.plain.luck ?? '—'}</span>
+                </div>
+              </div>
+              <p className="hint" style={{ margin: 0 }}>{ritualVerdict(ritual)}</p>
+            </>
+          )}
         </div>
 
         {shame.length > 0 && (

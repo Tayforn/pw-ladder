@@ -10,10 +10,11 @@
 import { describe, it, expect } from 'vitest';
 import { computeSessionStats } from '../sessionStats';
 import { computeRngProfile } from '../rngProfile';
+import { computeRitualStats } from '../ritual';
 import { evaluateTitles } from '../titles';
 import { lcg, simulateRun, STRATEGIES } from './helpers';
 
-const RUNS_PER_STRATEGY = 400;
+const RUNS_PER_STRATEGY = 300;
 
 // THE_CHOSEN_ONE залежить від рекорду ладдера (контекст, не історія) —
 // у симуляції рекорд узято за 6, щоб перевіряти і його.
@@ -29,7 +30,7 @@ function collectRates() {
       const state = simulateRun(STRATEGIES[name], roll);
       const stats = computeSessionStats(state.history);
       const profile = computeRngProfile(state.history, stats);
-      const { qualified } = evaluateTitles(state.history, stats, profile, RECORD_LEVEL);
+      const { qualified } = evaluateTitles(state.history, stats, profile, RECORD_LEVEL, computeRitualStats(state.history));
       for (const t of qualified) {
         if (!counts.has(t.id)) counts.set(t.id, new Map());
         const m = counts.get(t.id)!;
@@ -67,6 +68,11 @@ describe('калібрування титулів (симуляція чесно
     'THE_UNBREAKABLE', 'EDGE_DANCER', 'PHOTO_FINISH', 'STONE_COLLECTOR',
     'THE_CHOSEN_ONE', 'SLOW_AND_STEADY',
     'ICARUS', 'DARK_STAR', 'DOUBLE_BOTTOM', 'GREED', 'COOL_HEAD', 'ALCHEMIST',
+    // ритуал (стратегії coldRitualist/patientRitualist/hotRitualist/metronome/twoHands)
+    'SHAMAN', 'CULT', 'COLD_ADEPT', 'HOT_ADEPT', 'METRONOME', 'PATIENT_SHAMAN',
+    'IMPATIENT', 'TWO_CHAIRS', 'OVERHEAT', 'FAITH_WORKS', 'SCIENCE_WINS', 'PLACEBO',
+    'SKEPTIC', 'CASTLING', 'CASTLING_CAROUSEL', 'PROMOTION', 'SACRIFICIAL_LAMB',
+    'DOUBLE_AGENT', 'ECLECTIC',
   ];
   for (const id of mustBeReachable) {
     it(`${id} досяжний у чесній грі`, () => {

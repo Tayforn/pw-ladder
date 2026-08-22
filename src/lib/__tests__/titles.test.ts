@@ -10,13 +10,14 @@ import { computeSessionStats } from '../sessionStats';
 import { computeRngProfile } from '../rngProfile';
 import { evaluateTitles, TITLE_CONFIG } from '../titles';
 import { buildHallOfShame } from '../hallOfShame';
+import { computeRitualStats } from '../ritual';
 import { seqHistory, rep, type Step } from './helpers';
 import type { AttemptResult } from '../types';
 
 function titlesFor(history: AttemptResult[], recordLevel: number | null = null) {
   const stats = computeSessionStats(history);
   const profile = computeRngProfile(history, stats);
-  return evaluateTitles(history, stats, profile, recordLevel);
+  return evaluateTitles(history, stats, profile, recordLevel, computeRitualStats(history));
 }
 const ids = (r: ReturnType<typeof titlesFor>) => r.qualified.map((t) => t.id);
 
@@ -372,5 +373,161 @@ describe('buildHallOfShame', () => {
     expect(titles).toContain('ВЕЛИКЕ ПАДІННЯ');
     expect(titles).toContain('КРИВАВЕ ЖЕРТВОПРИНОШЕННЯ');
     expect(titles).toContain('НАЙПРОКЛЯТІШИЙ ВІДРІЗОК');
+  });
+});
+
+describe('ритуальні титули (підставна шмотка)', () => {
+  /** k мінусів на b, потім тиць a; повторити n разів. a стоїть на +1 через world-провали. */
+  const coldCycles = (k: number, n: number): Step[] => {
+    const steps: Step[] = [['mirage', true, 'a']];
+    for (let i = 0; i < n; i++) steps.push(...rep('mirage', false, k, 'b'), ['world', false, 'a']);
+    return steps;
+  };
+
+  it('SHAMAN / COLD_ADEPT / IMPATIENT: 10 тиців після одного мінуса', () => {
+    const t = ids(titlesFor(seqHistory(coldCycles(1, 10))));
+    expect(t).toContain('SHAMAN');
+    expect(t).toContain('COLD_ADEPT');
+    expect(t).toContain('IMPATIENT');
+  });
+
+  it('CULT ‹−−−› з динамічною назвою і PATIENT_SHAMAN', () => {
+    const r = titlesFor(seqHistory(coldCycles(3, 8)));
+    const cult = r.qualified.find((x) => x.id === 'CULT');
+    expect(cult?.name).toBe('КУЛЬТ ‹−−−›');
+    expect(ids(r)).not.toContain('PATIENT_SHAMAN');
+    expect(ids(titlesFor(seqHistory(coldCycles(6, 3))))).toContain('PATIENT_SHAMAN');
+  });
+
+  it('CULT також для "чекаю два мінуси" з різними префіксами (суфіксна сигнатура)', () => {
+    const steps: Step[] = [['mirage', true, 'a']];
+    for (let i = 0; i < 8; i++) {
+      if (i % 2 === 0) steps.push(['mirage', true, 'b'], ['mirage', false, 'b']); // префікс "+-"
+      steps.push(...rep('mirage', false, 2, 'b'), ['world', false, 'a']);
+    }
+    const cult = titlesFor(seqHistory(steps)).qualified.find((x) => x.id === 'CULT');
+    expect(cult?.name).toBe('КУЛЬТ ‹−−›');
+  });
+
+  it('COMBINATOR ‹−+−+›: змішаний суфікс', () => {
+    const steps: Step[] = [['mirage', true, 'a']];
+    for (let i = 0; i < 8; i++) {
+      steps.push(['mirage', false, 'b'], ['mirage', true, 'b'], ['mirage', false, 'b'], ['mirage', true, 'b'], ['world', false, 'a']);
+    }
+    const combo = titlesFor(seqHistory(steps)).qualified.find((x) => x.id === 'COMBINATOR');
+    expect(combo?.name).toBe('КОМБІНАТОР ‹−+−+›');
+  });
+
+  it('HOT_ADEPT: тиць після плюса підставної', () => {
+    const steps: Step[] = [['mirage', true, 'a']];
+    for (let i = 0; i < 8; i++) steps.push(['mirage', false, 'b'], ['mirage', true, 'b'], ['world', false, 'a']);
+    expect(ids(titlesFor(seqHistory(steps)))).toContain('HOT_ADEPT');
+  });
+
+  it('ECLECTIC: 8 різних преамбул', () => {
+    const steps: Step[] = [...rep('mirage', true, 5, 'a')]; // a = 5, b лишається нижче
+    const patterns = ['-', '+', '--', '+-', '-+', '---', '++', '+--'];
+    for (const pat of patterns) {
+      for (const ch of pat) steps.push(['mirage', ch === '+', 'b']);
+      steps.push(['world', false, 'a']);
+    }
+    expect(ids(titlesFor(seqHistory(steps)))).toContain('ECLECTIC');
+  });
+
+  it('FAITH_WORKS / SCIENCE_WINS / PLACEBO — взаємовиключні за різницею удачі', () => {
+    // Віра: ритуальні тиці всі заходять, без ритуалу — всі мимо.
+    const faith: Step[] = [...rep('mirage', false, 10, 'a')];
+    for (let i = 0; i < 10; i++) faith.push(['mirage', false, 'b'], ['mirage', true, 'a']);
+    const f = ids(titlesFor(seqHistory(faith)));
+    expect(f).toContain('FAITH_WORKS');
+    expect(f).not.toContain('SCIENCE_WINS');
+
+    // Наука: навпаки.
+    const science: Step[] = [...rep('mirage', true, 10, 'a')];
+    for (let i = 0; i < 10; i++) science.push(['mirage', false, 'b'], ['mirage', false, 'a']);
+    expect(ids(titlesFor(seqHistory(science)))).toContain('SCIENCE_WINS');
+
+    // Плацебо: однакова пила з ритуалом і без.
+    const placebo: Step[] = [];
+    for (let i = 0; i < 15; i++) placebo.push(['mirage', i % 2 === 0, 'a']);
+    for (let i = 0; i < 15; i++) placebo.push(['mirage', false, 'b'], ['mirage', i % 2 === 0, 'a']);
+    expect(ids(titlesFor(seqHistory(placebo)))).toContain('PLACEBO');
+  });
+
+  it('METRONOME і TWO_CHAIRS: строге чергування', () => {
+    const steps: Step[] = [];
+    for (let i = 0; i < 26; i++) steps.push(['mirage', false, 'a'], ['mirage', false, 'b']);
+    const t = ids(titlesFor(seqHistory(steps)));
+    expect(t).toContain('METRONOME');
+    expect(t).toContain('TWO_CHAIRS');
+  });
+
+  it('RITUAL_BETRAYAL і OVERHEAT', () => {
+    const betrayal = seqHistory([...rep('mirage', true, 5, 'a'), ...rep('mirage', false, 3, 'b'), ['mirage', false, 'a']]);
+    expect(ids(titlesFor(betrayal))).toContain('RITUAL_BETRAYAL');
+    const low = seqHistory([...rep('mirage', true, 4, 'a'), ...rep('mirage', false, 3, 'b'), ['mirage', false, 'a']]);
+    expect(ids(titlesFor(low))).not.toContain('RITUAL_BETRAYAL');
+    const steps: Step[] = [];
+    for (let i = 0; i < 10; i++) steps.push(['mirage', false, 'b'], ['mirage', false, 'a']);
+    expect(ids(titlesFor(seqHistory(steps)))).toContain('OVERHEAT');
+  });
+
+  it('RNG_WHISPERER: 20 ритуальних тиців з удачею 65+', () => {
+    const steps: Step[] = [];
+    for (let i = 0; i < 5; i++) {
+      steps.push(
+        ['mirage', false, 'b'], ['mirage', true, 'a'],
+        ['mirage', false, 'b'], ['mirage', true, 'a'],
+        ['mirage', false, 'b'], ['world', true, 'a'],   // 2→3 при 10%
+        ['mirage', false, 'b'], ['mirage', false, 'a'], // 3→0
+      );
+    }
+    expect(ids(titlesFor(seqHistory(steps)))).toContain('RNG_WHISPERER');
+  });
+
+  it('SKEPTIC vs BOUGHT_AND_FORGOT', () => {
+    const solo: Step[] = [];
+    for (let i = 0; i < 75; i++) solo.push(['mirage', true, 'a'], ['mirage', false, 'a']);
+    expect(ids(titlesFor(seqHistory(solo)))).toContain('SKEPTIC');
+    const once = ids(titlesFor(seqHistory([...solo, ['mirage', false, 'b']])));
+    expect(once).toContain('BOUGHT_AND_FORGOT');
+    expect(once).not.toContain('SKEPTIC');
+  });
+
+  it('CASTLING / CASTLING_CAROUSEL / PROMOTION — лише значущі рокіровки (+3 і вище)', () => {
+    // Рокіровка відбувається В МОМЕНТ перевищення: b=2 > a=1 — шум, навіть якщо b далі росте.
+    const noise = seqHistory([['mirage', true, 'a'], ...rep('mirage', true, 3, 'b')]);
+    expect(ids(titlesFor(noise))).not.toContain('CASTLING');
+    const one = seqHistory([...rep('mirage', true, 2, 'a'), ...rep('mirage', true, 3, 'b')]); // b=3 > a=2
+    expect(ids(titlesFor(one))).toContain('CASTLING');
+    const carousel = seqHistory([
+      ...rep('mirage', true, 2, 'a'), ...rep('mirage', true, 3, 'b'), // swap → b (3)
+      ...rep('mirage', true, 2, 'a'),                                 // a=4 > 3 → swap → a
+      ...rep('mirage', true, 2, 'b'),                                 // b=5 > 4 → swap → b
+    ]);
+    const t = ids(titlesFor(carousel));
+    expect(t).toContain('CASTLING_CAROUSEL');
+    expect(t).not.toContain('CASTLING');
+    const promo = seqHistory([
+      ...rep('mirage', true, 2, 'a'),          // a=2 (пік 2)
+      ...rep('mirage', true, 3, 'b'),          // b=3 → рокіровка
+      ['mirage', true, 'b'],                   // b=4 — новий загальний пік після рокіровки
+    ]);
+    expect(ids(titlesFor(promo))).toContain('PROMOTION');
+  });
+
+  it('SACRIFICIAL_LAMB / DOUBLE_AGENT / DECOY_PRICIER / WHITE_IRON', () => {
+    const lamb: Step[] = [...rep('mirage', true, 2, 'a')];
+    for (let i = 0; i < 60; i++) lamb.push(['mirage', true, 'b'], ['mirage', false, 'b']);
+    expect(ids(titlesFor(seqHistory(lamb)))).toContain('SACRIFICIAL_LAMB');
+
+    const agent = seqHistory([...rep('mirage', true, 5, 'a'), ...rep('mirage', true, 5, 'b')]);
+    expect(ids(titlesFor(agent))).toContain('DOUBLE_AGENT');
+
+    const pricier = seqHistory([...rep('mirage', true, 3, 'a'), ['mirage', true, 'b'], ...rep('world', false, 5, 'b')]);
+    expect(ids(titlesFor(pricier))).toContain('DECOY_PRICIER');
+
+    const iron = seqHistory([...rep('mirage', true, 3, 'a'), ...rep('mirage', false, 30, 'b')]);
+    expect(ids(titlesFor(iron))).toContain('WHITE_IRON');
   });
 });

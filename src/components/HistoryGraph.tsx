@@ -1,11 +1,13 @@
 // =========================================================
-// "Подорож" забігу — SVG-графік рівня по всіх спробах. Точний, без
-// згладжування (кожна спроба — точка); підказка при наведенні показує
-// деталі конкретної спроби. Позначки: пік, перший +7, перший +10.
+// "Подорож" забігу — SVG-графік рівня по всіх спробах. Дві лінії: предмет-
+// переможець яскравий, другий — приглушений; x — глобальний номер спроби.
+// Точний, без згладжування (кожна спроба — точка); підказка при наведенні
+// показує деталі. Позначки: пік переможця, моменти рокіровки.
 // =========================================================
 
 import { MAX_LEVEL, STONE_LABEL } from '../data/refineRates';
-import type { AttemptResult } from '../lib/types';
+import { MAJOR_SWAP_LEVEL, pickWinner } from '../lib/sessionStats';
+import { otherSlot, type AttemptResult, type ItemSlot } from '../lib/types';
 
 const W = 700;
 const H = 200;
@@ -14,18 +16,37 @@ const PAD = 22;
 export default function HistoryGraph({ history }: { history: AttemptResult[] }) {
   if (history.length === 0) return null;
 
+  const winner = pickWinner(history);
   const xFor = (i: number) => PAD + (history.length <= 1 ? 0 : (i / (history.length - 1)) * (W - PAD * 2));
   const yFor = (lv: number) => H - PAD - (lv / MAX_LEVEL) * (H - PAD * 2);
 
-  const points = history.map((h, i) => ({ x: xFor(i), y: yFor(h.after), h, idx: i + 1 }));
-  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const series = (item: ItemSlot) =>
+    history
+      .map((h, i) => ({ x: xFor(i), y: yFor(h.after), h, idx: i + 1 }))
+      .filter((p) => p.h.item === item);
+  const pathOf = (pts: ReturnType<typeof series>) =>
+    pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
 
-  let peakIdx = 0;
-  history.forEach((h, i) => {
-    if (h.after > history[peakIdx].after) peakIdx = i;
-  });
-  const first7 = history.findIndex((h) => h.after >= 7);
-  const first10 = history.findIndex((h) => h.after >= 10);
+  const main = series(winner);
+  const other = series(otherSlot(winner));
+
+  let peak = main[0];
+  for (const p of main) if (p.h.after > peak.h.after) peak = p;
+
+  // Значущі рокіровки (новий основний на +3 і вище): відтворюємо липке
+  // правило ролей; зміни ролей на 0↔1 — шум, на графіку не потрібні.
+  const swaps: number[] = [];
+  {
+    const levels: Record<ItemSlot, number> = { a: 0, b: 0 };
+    let mainSlot: ItemSlot = 'a';
+    history.forEach((h, i) => {
+      levels[h.item] = h.after;
+      if (levels[otherSlot(mainSlot)] > levels[mainSlot]) {
+        mainSlot = otherSlot(mainSlot);
+        if (levels[mainSlot] >= MAJOR_SWAP_LEVEL) swaps.push(i);
+      }
+    });
+  }
 
   const gridLevels = [0, 3, 6, 9, 12];
 
@@ -39,38 +60,36 @@ export default function HistoryGraph({ history }: { history: AttemptResult[] }) 
           </g>
         ))}
 
-        <path d={pathD} className="history-graph-path" fill="none" />
+        {swaps.map((i) => (
+          <line key={'swap' + i} x1={xFor(i)} x2={xFor(i)} y1={PAD - 6} y2={H - PAD} className="history-swap-line">
+            <title>{`Рокіровка на спробі №${i + 1}`}</title>
+          </line>
+        ))}
 
-        {points.map((p) => {
+        {other.length > 0 && <path d={pathOf(other)} className="history-graph-path history-graph-path-dim" fill="none" />}
+        {main.length > 0 && <path d={pathOf(main)} className="history-graph-path" fill="none" />}
+
+        {[...other, ...main].map((p) => {
           const isDrop = p.h.after < p.h.before;
+          const dim = p.h.item !== winner;
           return (
             <circle
               key={p.idx}
               cx={p.x}
               cy={p.y}
               r={isDrop ? 3 : 2}
-              className={'history-point ' + (p.h.success ? 'succ' : isDrop ? 'drop' : 'fail')}
+              className={'history-point ' + (p.h.success ? 'succ' : isDrop ? 'drop' : 'fail') + (dim ? ' dim' : '')}
             >
               <title>
-                {`#${p.idx}: ${STONE_LABEL[p.h.method]} · +${p.h.before} → +${p.h.after} · ${p.h.success ? 'успіх' : 'провал'}`}
+                {`#${p.idx} (${p.h.role === 'main' ? 'основна' : 'підставна'}): ${STONE_LABEL[p.h.method]} · +${p.h.before} → +${p.h.after} · ${p.h.success ? 'успіх' : 'провал'}`}
               </title>
             </circle>
           );
         })}
 
-        {history[peakIdx] && (
-          <circle cx={points[peakIdx].x} cy={points[peakIdx].y} r={5} className="history-marker">
-            <title>{`Пік: +${history[peakIdx].after} (спроба №${peakIdx + 1})`}</title>
-          </circle>
-        )}
-        {first7 >= 0 && first7 !== peakIdx && (
-          <circle cx={points[first7].x} cy={points[first7].y} r={4} className="history-marker history-marker-sub">
-            <title>{`Перший +7 (спроба №${first7 + 1})`}</title>
-          </circle>
-        )}
-        {first10 >= 0 && first10 !== peakIdx && (
-          <circle cx={points[first10].x} cy={points[first10].y} r={4} className="history-marker history-marker-sub">
-            <title>{`Перший +10 (спроба №${first10 + 1})`}</title>
+        {peak && (
+          <circle cx={peak.x} cy={peak.y} r={5} className="history-marker">
+            <title>{`Пік: +${peak.h.after} (спроба №${peak.idx})`}</title>
           </circle>
         )}
       </svg>

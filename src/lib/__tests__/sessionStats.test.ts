@@ -87,6 +87,35 @@ describe('computeSessionStats', () => {
   });
 });
 
+describe('два предмети', () => {
+  it('переможець — вищий фінальний рівень; статистика по рівнях — по ньому', () => {
+    const h = seqHistory([
+      ...rep('mirage', true, 2, 'a'), ['mirage', false, 'a'], // a: пік 2, впав у 0
+      ...rep('mirage', true, 3, 'b'),                         // b: 3 → переможець
+    ]);
+    const s = computeSessionStats(h);
+    expect(s.winnerItem).toBe('b');
+    expect(s.finalLevel).toBe(3);
+    expect(s.peakLevel).toBe(3);
+    expect(s.peakAttempt).toBe(6); // глобальний номер спроби
+    expect(s.biggestDrop).toBe(0); // падіння було на a, не на переможці
+    expect(s.timesHitZero).toBe(1); // а поїздки в нуль — по всіх
+    expect(s.attemptsUsed).toBe(6);
+    expect(s.decoy.attempts).toBe(3);
+    expect(s.decoy.peakLevel).toBe(2);
+    expect(s.decoy.timesHitZero).toBe(1);
+    expect(s.roleSwaps).toBe(1);
+    expect(s.majorSwaps).toBe(0); // рокіровка сталась, коли b=1 > a=0 — шум, не подія
+  });
+
+  it('рівність фіналів: переможець — вищий пік, далі a', () => {
+    const tie = seqHistory([['mirage', true, 'a'], ['mirage', true, 'b']]);
+    expect(computeSessionStats(tie).winnerItem).toBe('a');
+    const peakB = seqHistory([['mirage', true, 'a'], ...rep('mirage', true, 2, 'b'), ['under', false, 'b']]); // b: пік 2, фінал 1
+    expect(computeSessionStats(peakB).winnerItem).toBe('b');
+  });
+});
+
 describe('longestSameLevelFailStreak', () => {
   it('рахує лише ПОСПІЛЬ на одному рівні', () => {
     // 3 провали world на 1, успіх, 2 провали world на 2

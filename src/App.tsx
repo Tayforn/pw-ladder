@@ -20,7 +20,8 @@ import FinalResultScreen from './components/FinalResultScreen';
 import { reportError, errorMessage } from './app/errorMessage';
 import { useLadderData } from './app/useLadderData';
 import { submitIfBetter, type LadderStats } from './data/ladder';
-import { useLadderGame, costFor, MAX_ATTEMPTS, type AttemptResult } from './lib/ladderEngine';
+import { useLadderGame, costFor, ladderLevel, MAX_ATTEMPTS, type AttemptResult } from './lib/ladderEngine';
+import { computeRitualStats, type RitualStats } from './lib/ritual';
 import { computeSessionStats, type SessionStats } from './lib/sessionStats';
 import { computeRngProfile, type RngProfile } from './lib/rngProfile';
 import { evaluateTitles, type TitleResult } from './lib/titles';
@@ -38,6 +39,7 @@ interface FinalResult {
   profile: RngProfile;
   titles: { qualified: TitleResult[]; primary: TitleResult | null };
   shame: ShameEntry[];
+  ritual: RitualStats;
   submitMsg: string;
   /** Результат НЕ зараховано (попередній кращий) і прогрес НЕ скинуто. */
   runContinues: boolean;
@@ -111,15 +113,16 @@ export default function App() {
     const profile = computeRngProfile(history, stats);
     // Порожній (завантажений) ладдер — рекорд 0: перший гравець теж ОБРАНИЙ.
     const currentRecordLevel = entries.length > 0 ? entries[0].level : 0;
-    const titles = evaluateTitles(history, stats, profile, currentRecordLevel);
+    const ritual = computeRitualStats(history);
+    const titles = evaluateTitles(history, stats, profile, currentRecordLevel, ritual);
     const shame = buildHallOfShame(history, stats);
     const pointsSpent = history.reduce((sum, h) => sum + costFor(h.method, settings), 0);
-    const base = { history, stats, profile, titles, shame, pointsSpent, pointsLeft: game.state.points };
+    const base = { history, stats, profile, titles, shame, ritual, pointsSpent, pointsLeft: game.state.points };
 
     setSubmitting(true);
     try {
       const { submitted } = await submitIfBetter(
-        nickname, game.state.level, game.state.attempts, game.state.points,
+        nickname, ladderLevel(game.state), game.state.attempts, game.state.points,
         statsToLadderStats(stats, profile), history,
       );
       // Прогрес скидається, лише якщо результат ЗАРАХОВАНО (або вичерпано
@@ -235,6 +238,7 @@ export default function App() {
           profile={finalResult.profile}
           titles={finalResult.titles}
           shame={finalResult.shame}
+          ritual={finalResult.ritual}
           submitMsg={finalResult.submitMsg}
           busted={finalResult.busted}
           runContinues={finalResult.runContinues}

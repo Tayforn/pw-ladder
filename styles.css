@@ -643,3 +643,39 @@ body.modal-open { overflow: hidden; }
 .award-label { font-size: 10.5px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.05em; }
 .award-nick { font-weight: 700; font-size: 15px; }
 .award-value { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--accent-3); }
+
+/* ── Два предмети (підставна шмотка) ─────────────────────── */
+.sim-items { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.sim-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 14px 18px; border-radius: var(--radius); text-align: left; cursor: pointer;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line); color: var(--text);
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+.sim-item:hover { border-color: var(--line-2); transform: translateY(-1px); }
+.sim-item-active { border-color: rgba(var(--accent-3-rgb), 0.7); background: rgba(var(--accent-3-rgb), 0.08); box-shadow: 0 0 0 1px rgba(var(--accent-3-rgb), 0.35); }
+.sim-item-decoy .sim-level-value { background: linear-gradient(135deg, var(--text-dim), var(--text-mute)); -webkit-background-clip: text; background-clip: text; }
+.sim-item-role { font-size: 11px; color: var(--text-mute); letter-spacing: 0.08em; text-transform: uppercase; }
+.sim-item-main .sim-item-role { color: var(--accent-3); }
+.sim-item-meta { font-size: 11.5px; color: var(--text-mute); }
+.sim-display-compact { grid-template-columns: 1fr; gap: 8px; padding: 14px 18px; }
+.sim-display-compact .sim-target-info { flex-direction: row; flex-wrap: wrap; gap: 6px 18px; }
+.sim-ritual-banner {
+  margin: -6px 0 14px; padding: 10px 14px; border-radius: var(--radius); font-size: 13px;
+  background: rgba(var(--warn-rgb), 0.1); border: 1px solid rgba(var(--warn-rgb), 0.35); color: var(--text);
+}
+.item-badge {
+  display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+  border-radius: 6px; font-size: 11px; font-weight: 800; font-family: 'JetBrains Mono', monospace;
+  background: rgba(255, 255, 255, 0.05); color: var(--text-mute); border: 1px solid var(--line);
+}
+.item-badge.main { color: var(--accent-3); border-color: rgba(var(--accent-3-rgb), 0.4); background: rgba(var(--accent-3-rgb), 0.1); }
+.hist-row { grid-template-columns: 24px 130px 1fr 24px; }
+.history-graph-path-dim { stroke: var(--text-mute); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; }
+.history-point.dim { opacity: 0.45; }
+.history-swap-line { stroke: var(--warn); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.8; }
+.rng-profile-bar-fill.ritual { background: linear-gradient(90deg, var(--warn), var(--accent-3)); }
+@media (max-width: 520px) {
+  .sim-items { grid-template-columns: 1fr; }
+  .hist-row { grid-template-columns: 22px 96px 1fr 22px; }
+}

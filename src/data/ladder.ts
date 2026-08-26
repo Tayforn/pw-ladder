@@ -8,13 +8,16 @@ import { supabase } from '../app/supabaseClient';
 import { errorMessage } from '../app/errorMessage';
 import type { AttemptResult } from '../lib/types';
 
+/** Економіка ресурсів (0009): міраж = спроба, камені — штучні ліміти на
+ * забіг, підставні — кількість додаткових слотів. Балів немає. */
 export interface LadderSettings {
-  pointsPerSuccess: number;
-  /** Бали за успіх "підставної" (предмета з нижчим рівнем), 0008. */
-  decoyPointsPerSuccess: number;
-  skyCost: number;
-  underCost: number;
-  worldCost: number;
+  /** Кількість міражів = ліміт спроб на забіг (кожна спроба споживає 1). */
+  mirageCount: number;
+  skyCount: number;
+  underCount: number;
+  worldCount: number;
+  /** Кількість підставних шмоток (слотів 'b'..'f'), 0..5. */
+  decoyCount: number;
 }
 
 /** Розширена статистика ОДНОГО (найкращого) забігу гравця — потрібна для
@@ -47,11 +50,11 @@ export interface LadderEntry extends LadderStats {
 }
 
 interface SettingsRow {
-  points_per_success: number;
-  decoy_points_per_success: number;
-  sky_cost: number;
-  under_cost: number;
-  world_cost: number;
+  mirage_count: number;
+  sky_count: number;
+  under_count: number;
+  world_count: number;
+  decoy_count: number;
 }
 interface EntryRow {
   nickname: string;
@@ -79,11 +82,12 @@ const ENTRY_COLUMNS =
   'aggression, times_hit_zero, paid_attempts';
 
 const settingsFromRow = (r: SettingsRow): LadderSettings => ({
-  pointsPerSuccess: r.points_per_success,
-  decoyPointsPerSuccess: r.decoy_points_per_success ?? 5,
-  skyCost: r.sky_cost,
-  underCost: r.under_cost,
-  worldCost: r.world_cost,
+  // `??` — толерантність до БД, де 0009 ще не прогнано.
+  mirageCount: r.mirage_count ?? 200,
+  skyCount: r.sky_count ?? 15,
+  underCount: r.under_count ?? 15,
+  worldCount: r.world_count ?? 30,
+  decoyCount: r.decoy_count ?? 1,
 });
 const entryFromRow = (r: EntryRow): LadderEntry => ({
   nickname: r.nickname,
@@ -124,19 +128,19 @@ export async function fetchSettings(): Promise<LadderSettings> {
 
 export async function updateSettings(patch: Partial<LadderSettings>): Promise<void> {
   const row: Partial<SettingsRow> = {};
-  if (patch.pointsPerSuccess !== undefined) row.points_per_success = patch.pointsPerSuccess;
-  if (patch.decoyPointsPerSuccess !== undefined) row.decoy_points_per_success = patch.decoyPointsPerSuccess;
-  if (patch.skyCost !== undefined) row.sky_cost = patch.skyCost;
-  if (patch.underCost !== undefined) row.under_cost = patch.underCost;
-  if (patch.worldCost !== undefined) row.world_cost = patch.worldCost;
+  if (patch.mirageCount !== undefined) row.mirage_count = patch.mirageCount;
+  if (patch.skyCount !== undefined) row.sky_count = patch.skyCount;
+  if (patch.underCount !== undefined) row.under_count = patch.underCount;
+  if (patch.worldCount !== undefined) row.world_count = patch.worldCount;
+  if (patch.decoyCount !== undefined) row.decoy_count = patch.decoyCount;
   const { error } = await supabase.from('ladder_settings').update(row).eq('id', 1);
   if (error) throw error;
 }
 
-/** Рейтинг: перш за все за рівнем заточки (головне досягнення), а серед
- * однакових рівнів — за НАЙМЕНШОЮ кількістю спроб (бали можна нескінченно
- * накрутити просто клікаючи міраж, спроби так просто не підробиш). Якщо і
- * рівень, і спроби однакові — розв'язує нічию БІЛЬША кількість балів.
+/** Рейтинг: перш за все за рівнем заточки (головне досягнення), серед
+ * однакових рівнів — за НАЙМЕНШОЮ кількістю спроб (= спожитих міражів),
+ * а серед рівних і за спробами — за МЕНШОЮ кількістю платних каменів
+ * (paid_attempts рахує сервер із history, підробити не можна).
  * Завжди повний список (він легкий — history не вибирається): App ділить
  * його на топ-10 для таблиці і повний — для адмінки/спецнагород. */
 export async function fetchLadder(): Promise<LadderEntry[]> {
@@ -145,7 +149,7 @@ export async function fetchLadder(): Promise<LadderEntry[]> {
     .select(ENTRY_COLUMNS)
     .order('level', { ascending: false })
     .order('attempts', { ascending: true })
-    .order('points', { ascending: false });
+    .order('paid_attempts', { ascending: true });
   if (error) throw error;
   return (data as unknown as EntryRow[]).map(entryFromRow);
 }
@@ -160,7 +164,6 @@ export async function submitIfBetter(
   nickname: string,
   level: number,
   attempts: number,
-  points: number,
   stats: LadderStats,
   history: AttemptResult[],
 ): Promise<{ submitted: boolean }> {
@@ -177,7 +180,8 @@ export async function submitIfBetter(
   const { error } = await supabase
     .from('ladder_entries')
     .upsert(
-      { nickname, level, attempts, points, history, updated_at: new Date().toISOString(), ...statsToRow(stats) },
+      // points: 0 — бали більше не грають (0009), колонка лишилась not null.
+      { nickname, level, attempts, points: 0, history, updated_at: new Date().toISOString(), ...statsToRow(stats) },
       { onConflict: 'nickname' },
     );
   if (error) {

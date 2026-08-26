@@ -15,7 +15,7 @@ import {
 } from '../data/ladder';
 import { reportError } from './errorMessage';
 
-export const DEFAULT_SETTINGS: LadderSettings = { pointsPerSuccess: 10, decoyPointsPerSuccess: 5, skyCost: 20, underCost: 20, worldCost: 10 };
+export const DEFAULT_SETTINGS: LadderSettings = { mirageCount: 200, skyCount: 15, underCount: 15, worldCount: 30, decoyCount: 1 };
 
 const RELOAD_DEBOUNCE_MS = 400;
 

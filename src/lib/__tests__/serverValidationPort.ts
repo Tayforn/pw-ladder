@@ -1,22 +1,22 @@
 // =========================================================
-// TS-порт функції ladder_entries_validate() з міграції 0008 — рядок у
-// рядок повторює серверну логіку: ДВА ланцюжки рівнів (item a/b), вибір
-// переможця, перерахунок статистики, luck ±1, клемп балів, обчислювані
-// поля спецнагород. Використовується property-тестом "чесний забіг НІКОЛИ
-// не відхиляється" (serverParity.test.ts): якщо хтось змінить клієнтські
-// формули, правило переможця або RATES без синхронного апдейту SQL — цей
-// тест впаде першим, ДО того, як чесні гравці почнуть отримувати екран
-// "спіймано на гарячому".
+// TS-порт функції ladder_entries_validate() з міграції 0009 — рядок у
+// рядок повторює серверну логіку: ланцюжки рівнів по слотах 'a'..'f',
+// вибір переможця, перерахунок статистики, luck ±1, ліміти ресурсів
+// "жорстко з запасом ×1.5", обчислювані поля спецнагород. Використовується
+// property-тестом "чесний забіг НІКОЛИ не відхиляється"
+// (serverParity.test.ts): якщо хтось змінить клієнтські формули, правило
+// переможця або RATES без синхронного апдейту SQL — цей тест впаде першим,
+// ДО того, як чесні гравці почнуть отримувати екран "спіймано на гарячому".
 // =========================================================
 
 import { RATES } from '../../data/refineRates';
-import type { AttemptResult, ItemSlot } from '../types';
+import type { LadderSettings } from '../../data/ladder';
+import { ALL_SLOTS, type AttemptResult, type ItemSlot } from '../types';
 
 export interface SubmittedEntry {
   nickname: string;
   level: number;
   attempts: number;
-  points: number;
   best_streak: number;
   worst_streak: number;
   biggest_drop: number;
@@ -35,15 +35,18 @@ interface ItemAgg {
   afters: number[];
 }
 
+const emptyAgg = (): ItemAgg => ({ level: 0, peak: 0, peakAttempt: 0, drop: 0, afters: [] });
+
 /** Кидає Error із тим самим текстом-префіксом, що й SQL-тригер; повертає
- * points ПІСЛЯ серверного клемпа і поля спецнагород, які сервер обчислює з
- * history сам. `existing` — рядок, який оновлюється (undefined = insert).
- * Адмін-байпас тут навмисно не портовано. */
+ * поля спецнагород, які сервер обчислює з history сам. `limits` — поточні
+ * налаштування ресурсів (null = рядка налаштувань немає, ліміти не
+ * перевіряються). `existing` — рядок, який оновлюється (undefined =
+ * insert). Адмін-байпас тут навмисно не портовано. */
 export function validateLikeServer(
   entry: SubmittedEntry,
-  pointsPerSuccess: number | null,
+  limits: LadderSettings | null,
   existing?: { level: number; attempts: number },
-): { points: number; aggression: number; timesHitZero: number; paidAttempts: number } {
+): { aggression: number; timesHitZero: number; paidAttempts: number } {
   if (existing) {
     if (!(entry.level > existing.level || (entry.level === existing.level && entry.attempts < existing.attempts))) {
       throw new Error(`ladder_result_not_better: наявний результат (+${existing.level} за ${existing.attempts} спроб) не гірший за надісланий`);
@@ -54,8 +57,8 @@ export function validateLikeServer(
   if (n !== entry.attempts) {
     throw new Error(`ladder_entries: довжина history (${n}) не дорівнює attempts (${entry.attempts})`);
   }
-  if (entry.attempts > 200) {
-    throw new Error(`ladder_entries: attempts (${entry.attempts}) перевищує ліміт 200`);
+  if (entry.attempts > 500) {
+    throw new Error(`ladder_entries: attempts (${entry.attempts}) перевищує абсолютний ліміт 500`);
   }
 
   let curStreak = 0;
@@ -67,10 +70,11 @@ export function validateLikeServer(
   let stakeSum = 0;
   let calcHitZero = 0;
   let calcPaid = 0;
-  const items: Record<ItemSlot, ItemAgg> = {
-    a: { level: 0, peak: 0, peakAttempt: 0, drop: 0, afters: [] },
-    b: { level: 0, peak: 0, peakAttempt: 0, drop: 0, afters: [] },
-  };
+  let skyN = 0;
+  let underN = 0;
+  let worldN = 0;
+  const items: Record<ItemSlot, ItemAgg> = { a: emptyAgg(), b: emptyAgg(), c: emptyAgg(), d: emptyAgg(), e: emptyAgg(), f: emptyAgg() };
+  const usedItems = new Set<string>();
 
   for (let idx = 0; idx < n; idx++) {
     const elem = entry.history[idx] as Partial<AttemptResult>;
@@ -83,10 +87,11 @@ export function validateLikeServer(
     if (!['mirage', 'sky', 'under', 'world'].includes(method)) {
       throw new Error(`ladder_entries: невідомий метод "${method}" у history[${idx}]`);
     }
-    if (item !== 'a' && item !== 'b') {
+    if (!(ALL_SLOTS as string[]).includes(item)) {
       throw new Error(`ladder_entries: невідомий предмет "${item}" у history[${idx}]`);
     }
-    const agg = items[item];
+    usedItems.add(item);
+    const agg = items[item as ItemSlot];
     if (before !== agg.level) {
       throw new Error(`ladder_entries: history[${idx}] before (${before}) не збігається з рівнем предмета ${item} після попередньої спроби (${agg.level})`);
     }
@@ -121,6 +126,9 @@ export function validateLikeServer(
     if (method === 'mirage' || method === 'sky') stakeSum += before;
     else if (method === 'under') stakeSum += Math.min(1, before);
     if (method !== 'mirage') calcPaid++;
+    if (method === 'sky') skyN++;
+    else if (method === 'under') underN++;
+    else if (method === 'world') worldN++;
 
     if (!success && after < before) agg.drop = Math.max(agg.drop, before - after);
     if (after > agg.peak) {
@@ -131,12 +139,18 @@ export function validateLikeServer(
     agg.level = after;
   }
 
-  const finalLevel = Math.max(items.a.level, items.b.level);
+  // Переможець: вищий фінальний рівень; при рівності — вищий пік; далі —
+  // менша літера слота.
+  let w = items.a;
+  for (const slot of ALL_SLOTS) {
+    const agg = items[slot];
+    if (agg.level > w.level || (agg.level === w.level && agg.peak > w.peak)) w = agg;
+  }
+
+  const finalLevel = Math.max(...ALL_SLOTS.map((slot) => items[slot].level));
   if (finalLevel !== entry.level) {
     throw new Error(`ladder_entries: фінальний рівень історії (${finalLevel}) не збігається з level (${entry.level})`);
   }
-
-  const w = items.b.level > items.a.level || (items.b.level === items.a.level && items.b.peak > items.a.peak) ? items.b : items.a;
 
   let calcBiggestComeback = 0;
   const m = w.afters.length;
@@ -149,6 +163,25 @@ export function validateLikeServer(
         if (w.afters[j - 1] > laterPeak) laterPeak = w.afters[j - 1];
       }
       calcBiggestComeback = Math.max(calcBiggestComeback, laterPeak - afterI);
+    }
+  }
+
+  // Ліміти ресурсів: жорстко, але з запасом ×1.5 від поточних налаштувань.
+  if (limits) {
+    if (entry.attempts > Math.ceil(limits.mirageCount * 1.5)) {
+      throw new Error(`ladder_entries: спроб/міражів (${entry.attempts}) понад ліміт ${limits.mirageCount} (з запасом)`);
+    }
+    if (skyN > Math.ceil(limits.skyCount * 1.5)) {
+      throw new Error(`ladder_entries: небесок (${skyN}) понад ліміт ${limits.skyCount} (з запасом)`);
+    }
+    if (underN > Math.ceil(limits.underCount * 1.5)) {
+      throw new Error(`ladder_entries: підземок (${underN}) понад ліміт ${limits.underCount} (з запасом)`);
+    }
+    if (worldN > Math.ceil(limits.worldCount * 1.5)) {
+      throw new Error(`ladder_entries: світобудов (${worldN}) понад ліміт ${limits.worldCount} (з запасом)`);
+    }
+    if (usedItems.size > Math.ceil((limits.decoyCount + 1) * 1.5)) {
+      throw new Error(`ladder_entries: предметів (${usedItems.size}) понад ліміт ${limits.decoyCount + 1} (з запасом)`);
     }
   }
 
@@ -173,11 +206,6 @@ export function validateLikeServer(
     throw new Error(`ladder_entries: luck_score (${entry.luck_score}) не збігається з очікуваним (${calcLuck}) на основі RATES`);
   }
 
-  let points = entry.points;
-  if (pointsPerSuccess !== null) {
-    points = Math.min(points, successes * pointsPerSuccess);
-  }
-
   const aggression = Math.max(0, Math.min(100, Math.round((stakeSum / Math.max(n, 1) / 1.5) * 100)));
-  return { points, aggression, timesHitZero: calcHitZero, paidAttempts: calcPaid };
+  return { aggression, timesHitZero: calcHitZero, paidAttempts: calcPaid };
 }

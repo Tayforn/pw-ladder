@@ -1,19 +1,18 @@
 // =========================================================
-// Картка симулятора: ДВА предмети (основна/підставна — ролі за рівнем,
-// міняються місцями при рокіровці), активний обирається кліком; міраж і
-// платні камені діють на активний. Спільні бали/спроби, історія обох.
-// "ГВЧ прогрітий?" — іронічний індикатор хвоста мінусів підставної: гра
+// Картка симулятора (економіка ресурсів, 0009): основна + до 5 підставних
+// (кількість видає адмінка), активний предмет обирається кліком; кожна
+// спроба споживає 1 міраж, спроба каменем — додатково 1 одиницю каменя.
+// Балів немає — згори лічильники ресурсів, на кнопках каменів — залишок.
+// "ГВЧ прогрітий?" — іронічний індикатор хвоста мінусів підставних: гра
 // ритуал не підсилює, лише чесно показує, що гравець його виконує.
-// confirm перед внесенням показує, чи результат КРАЩИЙ за твій наявний
-// запис (сервер усе одно вирішує сам, це лише чесне попередження).
 // =========================================================
 
 import { useState } from 'react';
-import { costFor, ladderLevel, MAX_ATTEMPTS, MIN_ATTEMPTS_FOR_RESET, useLadderGame } from '../lib/ladderEngine';
+import { activeSlots, ladderLevel, remainingFor, resetUnlockAt, useLadderGame } from '../lib/ladderEngine';
 import { MAX_LEVEL, RATES, STONE_LABEL, type StoneMethod } from '../data/refineRates';
 import { LABEL_TEXT, TIER_LABEL } from '../lib/criticalMoments';
 import { isBetterResult, type LadderEntry, type LadderSettings } from '../data/ladder';
-import { otherSlot, type ItemSlot } from '../lib/types';
+import type { ItemSlot } from '../lib/types';
 import { attemptsWord, minusWord } from '../lib/plural';
 import AttemptHistoryList from './AttemptHistoryList';
 
@@ -43,20 +42,23 @@ export default function SimulatorCard({
   myEntry: LadderEntry | undefined;
   onSubmit: () => void;
 }) {
-  const { levels, mainSlot, points, attempts, history } = game.state;
+  const { levels, mainSlot, attempts, history } = game.state;
   const [active, setActive] = useState<ItemSlot>(mainSlot);
-  const decoySlot = otherSlot(mainSlot);
-  const level = levels[active];
-  const activeRole = active === mainSlot ? 'main' : 'decoy';
+  const slots = activeSlots(game.state, settings);
+  // Активний слот міг зникнути з налаштувань (адмін зменшив к-сть підставних).
+  const activeSlot = slots.includes(active) ? active : mainSlot;
+  const level = levels[activeSlot];
+  const activeRole = activeSlot === mainSlot ? 'main' : 'decoy';
   const nextLevel = level + 1;
   const atMax = level >= MAX_LEVEL;
-  const attemptsExhausted = attempts >= MAX_ATTEMPTS;
+  const miragesLeft = remainingFor('mirage', game.state, settings);
   const mirageRate = atMax ? null : RATES.mirage[nextLevel];
-  const mirageDisabled = atMax || attemptsExhausted || !mirageRate;
+  const mirageDisabled = atMax || miragesLeft <= 0 || !mirageRate;
   const lastAttempt = history[history.length - 1];
   const submitLevel = ladderLevel(game.state);
+  const resetAt = resetUnlockAt(settings);
 
-  // Хвіст мінусів підставної з кінця історії (до першої спроби основної).
+  // Хвіст мінусів підставних (за роллю) з кінця історії.
   let decoyColdTail = 0;
   for (let i = history.length - 1; i >= 0; i--) {
     const h = history[i];
@@ -75,19 +77,23 @@ export default function SimulatorCard({
     if (confirm(msg)) onSubmit();
   };
 
+  const decoyIndex = (slot: ItemSlot) => slots.filter((x) => x !== mainSlot).indexOf(slot) + 1;
+  const manyDecoys = slots.length > 2;
+
   const itemCard = (slot: ItemSlot) => {
     const role = slot === mainSlot ? 'main' : 'decoy';
-    const isActive = slot === active;
+    const isActive = slot === activeSlot;
     const lastOnItem = [...history].reverse().find((h) => h.item === slot);
+    const roleLabel = role === 'main' ? 'Основна' : manyDecoys ? `Підставна ${decoyIndex(slot)}` : 'Підставна';
     return (
       <button
         key={slot}
         type="button"
         className={'sim-item' + (isActive ? ' sim-item-active' : '') + (role === 'main' ? ' sim-item-main' : ' sim-item-decoy')}
         onClick={() => setActive(slot)}
-        title={role === 'main' ? 'Основна — вищий рівень, іде в ладдер' : 'Підставна — для ритуалів і балів за півціни'}
+        title={role === 'main' ? 'Основна — найвищий рівень, іде в ладдер' : 'Підставна — для ритуалів; переросте основну — міняються ролями'}
       >
-        <span className="sim-item-role">{role === 'main' ? 'Основна' : 'Підставна'}</span>
+        <span className="sim-item-role">{roleLabel}</span>
         <span className="sim-level-value">+{levels[slot]}</span>
         <span className="sim-item-meta">
           {isActive ? '● активна' : 'натисни, щоб точити'}
@@ -99,15 +105,21 @@ export default function SimulatorCard({
 
   return (
     <div className="card calc-card">
-      <div className="sim-items">
+      <div className="sim-items" style={manyDecoys ? { gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' } : undefined}>
         {itemCard(mainSlot)}
-        {itemCard(decoySlot)}
+        {slots.filter((slot) => slot !== mainSlot).map(itemCard)}
       </div>
 
       <div className="sim-display sim-display-compact">
         <div className="sim-target-info">
-          <span className="sim-level-target">Балів: {points}</span>
-          <span className="sim-level-target">Спроб: {attempts} / {MAX_ATTEMPTS}</span>
+          <span className="sim-level-target" title="Кожна спроба будь-чим споживає 1 міраж">
+            Міражів: <b>{miragesLeft}</b> / {settings.mirageCount}
+          </span>
+          {STONES.map((st) => (
+            <span key={st.method} className="sim-level-target">
+              {st.label}: <b>{remainingFor(st.method, game.state, settings)}</b>
+            </span>
+          ))}
           <span className="sim-level-target">Точиш: <b>{activeRole === 'main' ? 'основну' : 'підставну'}</b> (+{level})</span>
         </div>
         <div className="sim-last">
@@ -141,7 +153,7 @@ export default function SimulatorCard({
         type="button"
         className="btn btn-primary btn-lg sim-mirage-btn"
         disabled={mirageDisabled}
-        onClick={() => game.attempt(active, 'mirage')}
+        onClick={() => game.attempt(activeSlot, 'mirage')}
       >
         ⚒ Заточити {activeRole === 'main' ? 'основну' : 'підставну'} (міраж)
         <span className="sim-mirage-rate">{mirageRate ? (mirageRate * 100).toFixed(2) + '%' : '—'}</span>
@@ -150,20 +162,21 @@ export default function SimulatorCard({
       <div className="sim-stones-row">
         <div className="sim-stones">
           {STONES.map((st) => {
-            const cost = costFor(st.method, settings);
+            const left = remainingFor(st.method, game.state, settings);
             const rate = atMax ? null : RATES[st.method][nextLevel];
-            const disabled = atMax || !rate || !game.canUse(active, st.method);
+            const disabled = atMax || !rate || !game.canUse(activeSlot, st.method);
             return (
               <button
                 key={st.method}
                 type="button"
                 className="stone-btn stone-btn-sm"
                 disabled={disabled}
-                onClick={() => game.attempt(active, st.method)}
+                onClick={() => game.attempt(activeSlot, st.method)}
+                title="Спроба каменем споживає 1 міраж + 1 такий камінь"
               >
                 <span className={'badge ' + st.cls}>{st.label}</span>
                 <span className="stone-rate">{rate ? (rate * 100).toFixed(2) + '%' : '—'}</span>
-                <span className="stone-price">{cost} балів</span>
+                <span className="stone-price">лишилось ×{left}</span>
                 <span className="stone-meta">{st.failNote}</span>
               </button>
             );
@@ -185,14 +198,14 @@ export default function SimulatorCard({
         <button
           type="button"
           className="btn btn-ghost"
-          disabled={attempts < MIN_ATTEMPTS_FOR_RESET}
+          disabled={attempts < resetAt}
           onClick={() => {
             if (confirm('Скинути прогрес без внесення в ладдер? Поточний результат буде втрачено назавжди.')) game.reset();
           }}
         >
-          {attempts < MIN_ATTEMPTS_FOR_RESET
+          {attempts < resetAt
             ? (() => {
-                const left = MIN_ATTEMPTS_FOR_RESET - attempts;
+                const left = resetAt - attempts;
                 return `↺ до можливості скидання ${left} ${attemptsWord(left)}`;
               })()
             : '↺ Скинути прогрес'}

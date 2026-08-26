@@ -17,7 +17,7 @@ export default function LadderTable({ entries, nickname }: { entries: LadderEntr
             <th>Нік</th>
             <th className="num">Рівень</th>
             <th className="num">Спроб</th>
-            <th className="num">Бали</th>
+            <th className="num" title="Платних каменів використано — третій критерій рейтингу (менше = краще)">Камені</th>
           </tr>
         </thead>
         <tbody>
@@ -27,7 +27,7 @@ export default function LadderTable({ entries, nickname }: { entries: LadderEntr
               <td>{e.nickname}</td>
               <td className="num">+{e.level}</td>
               <td className="num">{e.attempts}</td>
-              <td className="num"><span className="muted">{e.points}</span></td>
+              <td className="num"><span className="muted">{e.paidAttempts}</span></td>
             </tr>
           ))}
         </tbody>

@@ -7,7 +7,7 @@
 
 import { MAX_LEVEL, STONE_LABEL } from '../data/refineRates';
 import { MAJOR_SWAP_LEVEL, pickWinner } from '../lib/sessionStats';
-import { otherSlot, type AttemptResult, type ItemSlot } from '../lib/types';
+import { ALL_SLOTS, type AttemptResult, type ItemSlot } from '../lib/types';
 
 const W = 700;
 const H = 200;
@@ -28,7 +28,8 @@ export default function HistoryGraph({ history }: { history: AttemptResult[] }) 
     pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
 
   const main = series(winner);
-  const other = series(otherSlot(winner));
+  const otherSlots = ALL_SLOTS.filter((slot) => slot !== winner && history.some((h) => h.item === slot));
+  const others = otherSlots.map(series);
 
   let peak = main[0];
   for (const p of main) if (p.h.after > peak.h.after) peak = p;
@@ -37,12 +38,16 @@ export default function HistoryGraph({ history }: { history: AttemptResult[] }) 
   // правило ролей; зміни ролей на 0↔1 — шум, на графіку не потрібні.
   const swaps: number[] = [];
   {
-    const levels: Record<ItemSlot, number> = { a: 0, b: 0 };
+    const levels: Record<ItemSlot, number> = { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 };
     let mainSlot: ItemSlot = 'a';
     history.forEach((h, i) => {
       levels[h.item] = h.after;
-      if (levels[otherSlot(mainSlot)] > levels[mainSlot]) {
-        mainSlot = otherSlot(mainSlot);
+      let next = mainSlot;
+      for (const slot of ALL_SLOTS) {
+        if (levels[slot] > levels[next]) next = slot;
+      }
+      if (next !== mainSlot) {
+        mainSlot = next;
         if (levels[mainSlot] >= MAJOR_SWAP_LEVEL) swaps.push(i);
       }
     });
@@ -66,10 +71,12 @@ export default function HistoryGraph({ history }: { history: AttemptResult[] }) 
           </line>
         ))}
 
-        {other.length > 0 && <path d={pathOf(other)} className="history-graph-path history-graph-path-dim" fill="none" />}
+        {others.map((pts, i) =>
+          pts.length > 0 ? <path key={otherSlots[i]} d={pathOf(pts)} className="history-graph-path history-graph-path-dim" fill="none" /> : null,
+        )}
         {main.length > 0 && <path d={pathOf(main)} className="history-graph-path" fill="none" />}
 
-        {[...other, ...main].map((p) => {
+        {[...others.flat(), ...main].map((p) => {
           const isDrop = p.h.after < p.h.before;
           const dim = p.h.item !== winner;
           return (

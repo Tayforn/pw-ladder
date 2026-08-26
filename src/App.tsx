@@ -20,7 +20,7 @@ import FinalResultScreen from './components/FinalResultScreen';
 import { reportError, errorMessage } from './app/errorMessage';
 import { useLadderData } from './app/useLadderData';
 import { submitIfBetter, type LadderStats } from './data/ladder';
-import { useLadderGame, costFor, ladderLevel, MAX_ATTEMPTS, type AttemptResult } from './lib/ladderEngine';
+import { useLadderGame, ladderLevel, type AttemptResult } from './lib/ladderEngine';
 import { computeRitualStats, type RitualStats } from './lib/ritual';
 import { computeSessionStats, type SessionStats } from './lib/sessionStats';
 import { computeRngProfile, type RngProfile } from './lib/rngProfile';
@@ -43,9 +43,6 @@ interface FinalResult {
   submitMsg: string;
   /** Результат НЕ зараховано (попередній кращий) і прогрес НЕ скинуто. */
   runContinues: boolean;
-  /** Витрачено балів на камені (за поточними цінами) і залишок на кінець. */
-  pointsSpent: number;
-  pointsLeft: number;
   /** Заповнено лише якщо сервер відхилив сабміт як несумісний із чесною
    * грою (0005/0006) — у чесній грі це не спрацьовує. */
   busted?: BustedJoke;
@@ -116,13 +113,12 @@ export default function App() {
     const ritual = computeRitualStats(history);
     const titles = evaluateTitles(history, stats, profile, currentRecordLevel, ritual);
     const shame = buildHallOfShame(history, stats);
-    const pointsSpent = history.reduce((sum, h) => sum + costFor(h.method, settings), 0);
-    const base = { history, stats, profile, titles, shame, ritual, pointsSpent, pointsLeft: game.state.points };
+    const base = { history, stats, profile, titles, shame, ritual };
 
     setSubmitting(true);
     try {
       const { submitted } = await submitIfBetter(
-        nickname, ladderLevel(game.state), game.state.attempts, game.state.points,
+        nickname, ladderLevel(game.state), game.state.attempts,
         statsToLadderStats(stats, profile), history,
       );
       // Прогрес скидається, лише якщо результат ЗАРАХОВАНО (або вичерпано
@@ -132,8 +128,8 @@ export default function App() {
       if (!runContinues) game.reset();
       const submitMsg = auto
         ? submitted
-          ? `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано — результат внесено в ладдер автоматично.`
-          : `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано — попередній результат у ладдері був кращий, цей не зараховано.`
+          ? `Міражі скінчились (${settings.mirageCount}) — результат внесено в ладдер автоматично.`
+          : `Міражі скінчились (${settings.mirageCount}) — попередній результат у ладдері був кращий, цей не зараховано.`
         : submitted
           ? 'Результат внесено в ладдер! Лічильники скинуто — можна починати новий забіг.'
           : 'Твій попередній результат у ладдері кращий — цей не зараховано. Прогрес НЕ скинуто, забіг триває.';
@@ -150,8 +146,8 @@ export default function App() {
         setFinalResult({
           ...base,
           submitMsg: busted
-            ? `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано, але сервер відхилив результат як несумісний із чесною грою.`
-            : `Ліміт спроб (${MAX_ATTEMPTS}) вичерпано, але внести результат у ладдер не вдалося. Лічильники все одно скинуто.`,
+            ? `Міражі скінчились (${settings.mirageCount}), але сервер відхилив результат як несумісний із чесною грою.`
+            : `Міражі скінчились (${settings.mirageCount}), але внести результат у ладдер не вдалося. Лічильники все одно скинуто.`,
           runContinues: false,
           busted,
         });
@@ -176,7 +172,7 @@ export default function App() {
   // лише після), тож ефект не спрацює вдруге поки триває цей виклик.
   const attempts = game.state.attempts;
   useEffect(() => {
-    if (!adminRoute && nickname && attempts >= MAX_ATTEMPTS) {
+    if (!adminRoute && nickname && attempts > 0 && attempts >= settings.mirageCount) {
       doSubmit(true);
     }
     // doSubmit навмисно поза deps: ефект має реагувати лише на attempts.
@@ -243,8 +239,7 @@ export default function App() {
           submitMsg={finalResult.submitMsg}
           busted={finalResult.busted}
           runContinues={finalResult.runContinues}
-          pointsSpent={finalResult.pointsSpent}
-          pointsLeft={finalResult.pointsLeft}
+          settings={settings}
           onTryAgain={() => setFinalResult(null)}
           onViewLeaderboard={() => {
             setFinalResult(null);

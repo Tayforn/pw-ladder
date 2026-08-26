@@ -8,8 +8,8 @@
 
 import { useState } from 'react';
 import Modal from './Modal';
-import { MAX_ATTEMPTS } from '../lib/ladderEngine';
 import { STONE_LABEL, type StoneMethod } from '../data/refineRates';
+import type { LadderSettings } from '../data/ladder';
 import type { AttemptResult } from '../lib/types';
 import type { SessionStats } from '../lib/sessionStats';
 import type { RngProfile } from '../lib/rngProfile';
@@ -59,8 +59,7 @@ export default function FinalResultScreen({
   submitMsg,
   busted,
   runContinues,
-  pointsSpent,
-  pointsLeft,
+  settings,
   onTryAgain,
   onViewLeaderboard,
 }: {
@@ -74,10 +73,8 @@ export default function FinalResultScreen({
   submitMsg: string | null;
   busted?: BustedJoke;
   runContinues: boolean;
-  /** Скільки балів пішло на камені за забіг (за поточними цінами). */
-  pointsSpent: number;
-  /** Залишок балів на момент завершення забігу. */
-  pointsLeft: number;
+  /** Ліміти ресурсів — для рядків "використано X із Y". */
+  settings: LadderSettings;
   onTryAgain: () => void;
   onViewLeaderboard: () => void;
 }) {
@@ -116,10 +113,10 @@ export default function FinalResultScreen({
 
           {submitMsg && <p className="hint" style={{ margin: 0 }}>{submitMsg}</p>}
           {runContinues ? (
-            <p className="hint" style={{ margin: 0 }}>Забіг триває: використано {stats.attemptsUsed} із {MAX_ATTEMPTS} спроб.</p>
+            <p className="hint" style={{ margin: 0 }}>Забіг триває: використано {stats.attemptsUsed} із {settings.mirageCount} міражів.</p>
           ) : (
-            stats.attemptsUsed < MAX_ATTEMPTS && (
-              <p className="hint" style={{ margin: 0 }}>Спроб лишалось: {MAX_ATTEMPTS - stats.attemptsUsed} — забіг завершено вручну.</p>
+            stats.attemptsUsed < settings.mirageCount && (
+              <p className="hint" style={{ margin: 0 }}>Міражів лишалось: {settings.mirageCount - stats.attemptsUsed} — забіг завершено вручну.</p>
             )
           )}
 
@@ -136,9 +133,7 @@ export default function FinalResultScreen({
 
           <div className="result-stats-grid" style={{ marginTop: 8 }}>
             <Stat label="Очікувано успіхів" value={profile.expectedSuccesses.toFixed(1)} />
-            <Stat label="Каменів куплено" value={stats.paidAttempts} />
-            <Stat label="Витрачено балів" value={pointsSpent} />
-            <Stat label="Залишок балів" value={pointsLeft} />
+            <Stat label="Каменів витрачено" value={stats.paidAttempts} />
             <Stat label="Втрачено рівнів" value={stats.totalLevelsLost} />
             <Stat label="Поїздок у нуль" value={stats.timesHitZero} />
             <Stat
@@ -149,16 +144,25 @@ export default function FinalResultScreen({
               label="Найдовший застій"
               value={stats.longestStagnation.length > 0 ? `${stats.longestStagnation.length} сп. на ~+${stats.longestStagnation.level}` : '—'}
             />
+            <Stat label="Рокіровок" value={stats.roleSwaps} />
+            <Stat label="Ціна віри" value={`${ritual.decoyAttempts} сп.`} />
           </div>
 
           <div className="result-stats-grid" style={{ marginTop: 8 }}>
-            {(Object.keys(STONE_LABEL) as StoneMethod[]).map((m) => (
-              <Stat
-                key={m}
-                label={STONE_LABEL[m]}
-                value={stats.methodCounts[m] > 0 ? `${stats.methodCounts[m]} сп. · ${stats.methodSuccesses[m]}✓` : '—'}
-              />
-            ))}
+            {(Object.keys(STONE_LABEL) as StoneMethod[]).map((m) => {
+              const limit = m === 'mirage' ? settings.mirageCount
+                : m === 'sky' ? settings.skyCount
+                : m === 'under' ? settings.underCount
+                : settings.worldCount;
+              const used = m === 'mirage' ? stats.attemptsUsed : stats.methodCounts[m];
+              return (
+                <Stat
+                  key={m}
+                  label={m === 'mirage' ? 'Міражі (спроби)' : STONE_LABEL[m]}
+                  value={used > 0 ? `${used}/${limit} · ${stats.methodSuccesses[m]}✓` : `0/${limit}`}
+                />
+              );
+            })}
           </div>
 
           {secondary.length > 0 && (
@@ -185,16 +189,14 @@ export default function FinalResultScreen({
 
           {stats.decoy.attempts > 0 && (
             <>
-              <h4 style={{ margin: '4px 0 0' }}>Підставна</h4>
+              <h4 style={{ margin: '4px 0 0' }}>Підставні (разом)</h4>
               <div className="result-stats-grid">
                 <Stat label="Спроб" value={stats.decoy.attempts} />
                 <Stat label="Успіхів" value={stats.decoy.successes} />
                 <Stat label="Пік" value={'+' + stats.decoy.peakLevel} />
-                <Stat label="Фініш" value={'+' + stats.decoy.finalLevel} />
+                <Stat label="Найкращий фініш" value={'+' + stats.decoy.finalLevel} />
                 <Stat label="Поїздок у нуль" value={stats.decoy.timesHitZero} />
                 <Stat label="Втрачено рівнів" value={stats.decoy.totalLevelsLost} />
-                <Stat label="Рокіровок" value={stats.roleSwaps} />
-                <Stat label="Ціна віри" value={`${ritual.decoyAttempts} сп.`} />
               </div>
             </>
           )}

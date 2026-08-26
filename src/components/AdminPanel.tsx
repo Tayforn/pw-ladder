@@ -154,13 +154,17 @@ export default function AdminPanel({
 
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>Налаштування балів</h3>
+      <h3 style={{ marginTop: 0 }}>Ресурси на забіг</h3>
+      <p className="hint" style={{ marginTop: 4, marginBottom: 12 }}>
+        Міражі = ліміт спроб (кожна спроба будь-чим споживає 1 міраж; камінь — додатково 1 свою одиницю).
+        Підставні — кількість додаткових слотів предметів (0–5).
+      </p>
       <div className="field-row admin-field-row">
-        <NumberField label="Балів за успіх (основна)" value={settings.pointsPerSuccess} onSave={(v) => save({ pointsPerSuccess: v })} />
-        <NumberField label="Балів за успіх (підставна)" value={settings.decoyPointsPerSuccess} onSave={(v) => save({ decoyPointsPerSuccess: v })} />
-        <NumberField label="Вартість «Небеска»" value={settings.skyCost} onSave={(v) => save({ skyCost: v })} />
-        <NumberField label="Вартість «Підземка»" value={settings.underCost} onSave={(v) => save({ underCost: v })} />
-        <NumberField label="Вартість «Світобудова»" value={settings.worldCost} onSave={(v) => save({ worldCost: v })} />
+        <NumberField label="Міражі (спроби)" value={settings.mirageCount} onSave={(v) => save({ mirageCount: v })} />
+        <NumberField label="Небески" value={settings.skyCount} onSave={(v) => save({ skyCount: v })} />
+        <NumberField label="Підземки" value={settings.underCount} onSave={(v) => save({ underCount: v })} />
+        <NumberField label="Світобудови" value={settings.worldCount} onSave={(v) => save({ worldCount: v })} />
+        <NumberField label="Підставні шмотки" value={settings.decoyCount} onSave={(v) => save({ decoyCount: Math.min(5, Math.round(v)) })} />
       </div>
       <button type="button" className="btn btn-bad" disabled={busy} onClick={doReset} style={{ marginTop: 16 }}>
         Обнулити ладдер

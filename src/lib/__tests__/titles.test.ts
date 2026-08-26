@@ -303,7 +303,7 @@ describe('evaluateTitles — кожен титул досяжний і триг�
     expect(ids(titlesFor(greedy))).not.toContain('COOL_HEAD');
   });
 
-  it('ALCHEMIST: 3+ успіхи світобудови на +3 і вище', () => {
+  it('ALCHEMIST: 2+ успіхи світобудови на +3 і вище', () => {
     const h = seqHistory([
       ...rep('mirage', true, 3),
       ['world', true],              // 3→4 (4%)

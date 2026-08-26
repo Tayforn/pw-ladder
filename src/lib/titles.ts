@@ -14,7 +14,7 @@
 // =========================================================
 
 import { STONE_LABEL } from '../data/refineRates';
-import { otherSlot, type AttemptResult, type ItemSlot } from './types';
+import { ALL_SLOTS, type AttemptResult, type ItemSlot } from './types';
 import { MAJOR_SWAP_LEVEL, winnerHistory, type SessionStats } from './sessionStats';
 import type { RngProfile } from './rngProfile';
 import { formatPreamble, type RitualStats } from './ritual';
@@ -22,7 +22,7 @@ import { tapsWord, timesWord, stonesWord, attemptsWord } from './plural';
 
 export const TITLE_CONFIG = {
   rngGod: { minPeak: 8, maxAttempts: 60 },
-  gambler: { minAggression: 60 },
+  gambler: { minAggression: 50 },
   cursed: { maxPeak: 3, minFailStreak: 8, maxStreakProb: 0.05 },
   grinder: { minAttempts: 180, minPeak: 5 },
   streaker: { minStreak: 6 },
@@ -51,7 +51,7 @@ export const TITLE_CONFIG = {
   doubleBottom: { minDrop: 5, minCount: 2 },
   greed: { minPeak: 6, minDropFromPeak: 5 },
   coolHead: { minPeak: 5 },
-  alchemist: { minLevel: 3, minCount: 3 },
+  alchemist: { minLevel: 3, minCount: 2 },
   marketingVictim: {},
   // ---- ритуал "підставної шмотки" ----
   shaman: { minSwitches: 10 },
@@ -206,7 +206,7 @@ function phoenixRise(history: AttemptResult[], minDrop: number): { from: number;
 /** ПРОМОУШН: після першої ЗНАЧУЩОЇ рокіровки (новий основний на +3 і
  * вище) він же встановив новий ЗАГАЛЬНИЙ пік забігу. */
 function promotionAfterSwap(history: AttemptResult[]): { level: number } | null {
-  const levels: Record<ItemSlot, number> = { a: 0, b: 0 };
+  const levels: Record<ItemSlot, number> = { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 };
   let mainSlot: ItemSlot = 'a';
   let swapped = false;
   let overallPeak = 0;
@@ -214,8 +214,12 @@ function promotionAfterSwap(history: AttemptResult[]): { level: number } | null 
     levels[h.item] = h.after;
     if (swapped && h.item === mainSlot && h.after > overallPeak) return { level: h.after };
     overallPeak = Math.max(overallPeak, h.after);
-    if (levels[otherSlot(mainSlot)] > levels[mainSlot]) {
-      mainSlot = otherSlot(mainSlot);
+    let next: ItemSlot = mainSlot;
+    for (const slot of ALL_SLOTS) {
+      if (levels[slot] > levels[next]) next = slot;
+    }
+    if (next !== mainSlot) {
+      mainSlot = next;
       if (levels[mainSlot] >= MAJOR_SWAP_LEVEL) swapped = true;
     }
   }
@@ -343,7 +347,7 @@ export function evaluateTitles(
   }
 
   if (stats.attemptsUsed >= cfg.grinder.minAttempts && stats.peakLevel >= cfg.grinder.minPeak) {
-    add('THE_GRINDER', 'ГРАЙНДЕР', `Викатав ${stats.attemptsUsed} із 200 спроб і дійшов до +${stats.peakLevel}.`);
+    add('THE_GRINDER', 'ГРАЙНДЕР', `Викатав ${stats.attemptsUsed} ${attemptsWord(stats.attemptsUsed)} і дійшов до +${stats.peakLevel}.`);
   }
 
   if (

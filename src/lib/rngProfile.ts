@@ -78,7 +78,7 @@ function pickArchetype(
 ): string {
   if (stats.peakLevel >= 8 && stats.attemptsUsed <= 60) return 'RNG God';
   if (dims.luck <= 20 && stats.peakLevel <= 3) return 'Cursed';
-  if (dims.aggression >= 60) return 'Gambler';
+  if (dims.aggression >= 50) return 'Gambler';
   if (stats.longestSuccessStreak >= 6) return 'Streaker';
   if (dims.recovery >= 70 && stats.biggestDrop >= 4) return 'Survivor';
   if (stats.attemptsUsed >= 180) return 'Grinder';

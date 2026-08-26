@@ -1,61 +1,84 @@
 // =========================================================
-// Ігровий рушій ладдера — спрощена версія attempt() з pw-calc
-// (src/lib/refineSim.ts): та сама таблиця шансів і поведінка при
-// провалі, але без itemType/цілі/авто-прогону — тут кожна спроба це
-// клік по одній з 4 кнопок, а "валюта" не золото, а бали.
+// Ігровий рушій ладдера — економіка РЕСУРСІВ (з 0009):
 //
-// ДВА ПРЕДМЕТИ (механіка "підставної шмотки"): слоти a/b, кожен зі своїм
-// рівнем. "Основна" — той, у кого рівень вищий (липко: при рівності роль
-// не міняється), другий — "підставна". Успіх основної дає
-// pointsPerSuccess, підставної — decoyPointsPerSuccess. Підставна
-// перевищила основну → міняються ролями (рокіровка). Бали і ліміт спроб
-// спільні — ритуал на підставній коштує бюджету 200 так само.
+//  * МІРАЖ = СПРОБА. Кожна спроба будь-яким методом споживає 1 міраж;
+//    спроба каменем додатково споживає 1 одиницю відповідного каменя.
+//    Тож attempts == спожиті міражі, а лишок міражів = mirageCount - attempts.
+//  * Ліміти (mirageCount / skyCount / underCount / worldCount / decoyCount)
+//    видає адмінка через ladder_settings.
+//  * Балів немає. Успіх — це просто +1 рівень.
+//  * Предмети: слот 'a' + до decoyCount підставних ('b'..'f'), кожен зі
+//    своїм рівнем. "Основна" — найвищий рівень (роль липка: міняється лише
+//    коли інший слот СТРОГО вищий); рокіровка міняє їх місцями в UI.
 //
 // Провал: world — рівень лишається; under — рівень -1; mirage/sky — рівень
 // скидається на 0.
 //
 // Історія зберігається ХРОНОЛОГІЧНО (найстаріша спроба — перша), ОДНА на
-// обидва предмети (поле item), і НЕ обрізається: природний ліміт —
-// MAX_ATTEMPTS. Похідні модулі (sessionStats/rngProfile/titles/
-// hallOfShame/ritual) рахують усе інше з неї, не чіпаючи сам кидок RNG.
+// всі предмети (поле item), і НЕ обрізається. Похідні модулі (sessionStats/
+// rngProfile/titles/hallOfShame/ritual) рахують усе з неї, не чіпаючи RNG.
 // =========================================================
 
 import { useCallback, useEffect, useState } from 'react';
 import { MAX_LEVEL, RATES, type StoneMethod } from '../data/refineRates';
 import type { LadderSettings } from '../data/ladder';
 import { labelsFor, tierFor } from './criticalMoments';
-import { otherSlot, type AttemptResult, type ItemSlot } from './types';
-
-export const MAX_ATTEMPTS = 200;
-/** "Скинути прогрес" розблоковується лише після стількох спроб — щоб не
- * можна було дешево перекидати невдалий старт забігу. */
-export const MIN_ATTEMPTS_FOR_RESET = 150;
+import { ALL_SLOTS, type AttemptResult, type ItemSlot } from './types';
 
 export type { AttemptResult };
 
 export interface LadderGameState {
   levels: Record<ItemSlot, number>;
   /** Слот, що зараз "основна". Липке правило — міняється лише коли інший
-   * слот СТРОГО вищий. */
+   * слот СТРОГО вищий (при кількох рівних вищих — менша літера). */
   mainSlot: ItemSlot;
-  points: number;
+  /** Скільки спроб зроблено КОЖНИМ методом (used.mirage — спроби саме
+   * міражем; спожиті міражі як ресурс — це attempts, бо міраж = спроба). */
+  used: Record<StoneMethod, number>;
   attempts: number;
   history: AttemptResult[];
 }
 
-export const EMPTY_STATE: LadderGameState = { levels: { a: 0, b: 0 }, mainSlot: 'a', points: 0, attempts: 0, history: [] };
-/** Поточний забіг переживає перезавантаження сторінки — інакше "скинути
- * прогрес можна лише після 150 спроб" обходиться банальним F5. */
+const ZERO_LEVELS: Record<ItemSlot, number> = { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 };
+const ZERO_USED: Record<StoneMethod, number> = { mirage: 0, sky: 0, under: 0, world: 0 };
+export const EMPTY_STATE: LadderGameState = {
+  levels: { ...ZERO_LEVELS },
+  mainSlot: 'a',
+  used: { ...ZERO_USED },
+  attempts: 0,
+  history: [],
+};
+
+/** Поточний забіг переживає перезавантаження сторінки — інакше замок
+ * "скинути прогрес лише після половини міражів" обходиться банальним F5. */
 const PROGRESS_KEY = 'ladder-progress';
 
-/** Старі історії (до механіки двох предметів) не мають item/role —
- * заповнюємо дефолтами: усе було на слоті a в ролі основної. */
+/** Скільки одиниць ресурсу лишилось. Для mirage — це лишок СПРОБ. */
+export function remainingFor(method: StoneMethod, s: LadderGameState, settings: LadderSettings): number {
+  if (method === 'mirage') return Math.max(0, settings.mirageCount - s.attempts);
+  const limit = method === 'sky' ? settings.skyCount : method === 'under' ? settings.underCount : settings.worldCount;
+  return Math.max(0, limit - s.used[method]);
+}
+
+/** Поріг розблокування "Скинути прогрес" — половина міражів. */
+export const resetUnlockAt = (settings: LadderSettings): number => Math.ceil(settings.mirageCount / 2);
+
+/** Слоти, доступні в поточних налаштуваннях: 'a' + decoyCount підставних.
+ * Слоти, на яких УЖЕ є історія (адмін зменшив ліміт посеред забігу),
+ * лишаються видимими. */
+export function activeSlots(s: LadderGameState, settings: LadderSettings): ItemSlot[] {
+  const allowed = ALL_SLOTS.slice(0, Math.min(6, 1 + Math.max(0, settings.decoyCount)));
+  const inPlay = ALL_SLOTS.filter((slot) => s.levels[slot] > 0 || s.history.some((h) => h.item === slot));
+  return ALL_SLOTS.filter((slot) => allowed.includes(slot) || inPlay.includes(slot));
+}
+
+/** Старі історії не мають item/role — заповнюємо дефолтами (слот a, основна). */
 export function normalizeHistory(history: unknown[]): AttemptResult[] {
   return history.map((raw) => {
     const h = raw as Partial<AttemptResult>;
     return {
       ...(h as AttemptResult),
-      item: h.item === 'b' ? 'b' : 'a',
+      item: h.item && ALL_SLOTS.includes(h.item) ? h.item : 'a',
       role: h.role === 'decoy' ? 'decoy' : 'main',
       labels: Array.isArray(h.labels) ? h.labels : [],
       tier: h.tier ?? 'normal',
@@ -63,51 +86,48 @@ export function normalizeHistory(history: unknown[]): AttemptResult[] {
   });
 }
 
+function usedFrom(history: AttemptResult[]): Record<StoneMethod, number> {
+  const used = { ...ZERO_USED };
+  for (const h of history) used[h.method]++;
+  return used;
+}
+
 function loadProgress(): LadderGameState {
   try {
     const raw = localStorage.getItem(PROGRESS_KEY);
     if (!raw) return EMPTY_STATE;
     const parsed = JSON.parse(raw);
-    if (typeof parsed?.points !== 'number' || typeof parsed?.attempts !== 'number' || !Array.isArray(parsed?.history)) {
-      return EMPTY_STATE;
-    }
+    if (typeof parsed?.attempts !== 'number' || !Array.isArray(parsed?.history)) return EMPTY_STATE;
     const history = normalizeHistory(parsed.history);
-    // Новий формат
-    if (parsed.levels && typeof parsed.levels.a === 'number' && typeof parsed.levels.b === 'number') {
-      return {
-        levels: { a: parsed.levels.a, b: parsed.levels.b },
-        mainSlot: parsed.mainSlot === 'b' ? 'b' : 'a',
-        points: parsed.points,
-        attempts: parsed.attempts,
-        history,
-      };
+    const levels = { ...ZERO_LEVELS };
+    if (parsed.levels && typeof parsed.levels === 'object') {
+      for (const slot of ALL_SLOTS) {
+        if (typeof parsed.levels[slot] === 'number') levels[slot] = parsed.levels[slot];
+      }
+    } else if (typeof parsed.level === 'number') {
+      levels.a = parsed.level; // найстаріший формат (один предмет)
     }
-    // Старий формат { level, ... } — один предмет у слоті a
-    if (typeof parsed.level === 'number') {
-      return { levels: { a: parsed.level, b: 0 }, mainSlot: 'a', points: parsed.points, attempts: parsed.attempts, history };
-    }
+    return {
+      levels,
+      mainSlot: ALL_SLOTS.includes(parsed.mainSlot) ? parsed.mainSlot : 'a',
+      used: usedFrom(history),
+      attempts: parsed.attempts,
+      history,
+    };
   } catch {
     /* ignore — пошкоджені/старі дані, починаємо заново */
   }
   return EMPTY_STATE;
 }
 
-export function costFor(method: StoneMethod, settings: LadderSettings): number {
-  if (method === 'mirage') return 0;
-  if (method === 'sky') return settings.skyCost;
-  if (method === 'under') return settings.underCost;
-  return settings.worldCost;
-}
-
 export const mainLevel = (s: LadderGameState): number => s.levels[s.mainSlot];
-export const decoyLevel = (s: LadderGameState): number => s.levels[otherSlot(s.mainSlot)];
-/** Рівень, що піде в ладдер, — вищий із двох. */
-export const ladderLevel = (s: LadderGameState): number => Math.max(s.levels.a, s.levels.b);
+/** Рівень, що піде в ладдер, — найвищий серед усіх предметів. */
+export const ladderLevel = (s: LadderGameState): number => Math.max(...ALL_SLOTS.map((slot) => s.levels[slot]));
 
 /** Чистий крок гри — ВСЯ ігрова логіка однієї спроби на предметі `item`.
  * `roll` ін'єктується: Math.random у проді, seeded RNG у тестах/симуляціях.
- * Повертає той самий стан, якщо спроба неможлива (ліміт, макс. рівень
- * цього предмета, нема балів). */
+ * Повертає той самий стан, якщо спроба неможлива (нема міражів, нема цього
+ * каменя, макс. рівень предмета). */
 export function applyAttempt(
   s: LadderGameState,
   item: ItemSlot,
@@ -116,20 +136,18 @@ export function applyAttempt(
   roll: () => number = Math.random,
 ): LadderGameState {
   const before = s.levels[item];
-  if (before >= MAX_LEVEL || s.attempts >= MAX_ATTEMPTS) return s;
-  const cost = costFor(method, settings);
-  if (s.points < cost) return s;
+  if (before >= MAX_LEVEL) return s;
+  if (remainingFor('mirage', s, settings) <= 0) return s;
+  if (method !== 'mirage' && remainingFor(method, s, settings) <= 0) return s;
   const p = RATES[method][before + 1];
   if (!p) return s;
 
   const role = item === s.mainSlot ? 'main' : 'decoy';
   const success = roll() < p;
   let level = before;
-  let points = s.points - cost;
 
   if (success) {
     level = before + 1;
-    points += role === 'main' ? settings.pointsPerSuccess : settings.decoyPointsPerSuccess;
   } else if (method === 'world') {
     /* рівень лишається */
   } else if (method === 'under') {
@@ -139,8 +157,11 @@ export function applyAttempt(
   }
 
   const levels = { ...s.levels, [item]: level };
-  // Рокіровка: другий слот СТРОГО вищий за поточну основну.
-  const mainSlot = levels[otherSlot(s.mainSlot)] > levels[s.mainSlot] ? otherSlot(s.mainSlot) : s.mainSlot;
+  // Рокіровка: основною стає слот зі СТРОГО вищим рівнем (липко).
+  let mainSlot = s.mainSlot;
+  for (const slot of ALL_SLOTS) {
+    if (levels[slot] > levels[mainSlot]) mainSlot = slot;
+  }
 
   const raw = { method, success, before, after: level, p };
   const record: AttemptResult = {
@@ -150,7 +171,13 @@ export function applyAttempt(
     tier: tierFor(before),
     labels: labelsFor(raw, s.history, s.history.filter((h) => h.item === item)),
   };
-  return { levels, mainSlot, points, attempts: s.attempts + 1, history: [...s.history, record] };
+  return {
+    levels,
+    mainSlot,
+    used: { ...s.used, [method]: s.used[method] + 1 },
+    attempts: s.attempts + 1,
+    history: [...s.history, record],
+  };
 }
 
 export function useLadderGame(settings: LadderSettings) {
@@ -166,8 +193,10 @@ export function useLadderGame(settings: LadderSettings) {
 
   const canUse = useCallback(
     (item: ItemSlot, method: StoneMethod) =>
-      state.levels[item] < MAX_LEVEL && state.attempts < MAX_ATTEMPTS && state.points >= costFor(method, settings),
-    [state.levels, state.attempts, state.points, settings],
+      state.levels[item] < MAX_LEVEL &&
+      remainingFor('mirage', state, settings) > 0 &&
+      (method === 'mirage' || remainingFor(method, state, settings) > 0),
+    [state, settings],
   );
 
   const attempt = useCallback(

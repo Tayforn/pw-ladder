@@ -1,26 +1,27 @@
 // =========================================================
 // Тестові хелпери: детермінований будівник валідних історій (переходи
-// рівнів за правилами гри, p з RATES, ДВА предмети з липкими ролями),
+// рівнів за правилами гри, p з RATES, N предметів з липкими ролями),
 // seeded RNG і симулятор чесних забігів на базі СПРАВЖНЬОГО рушія
-// (applyAttempt) — щоб тести й калібрування титулів ганяли той самий код,
-// що і прод.
+// (applyAttempt, економіка ресурсів 0009) — щоб тести й калібрування
+// титулів ганяли той самий код, що і прод.
 // =========================================================
 
 import { RATES, type StoneMethod } from '../../data/refineRates';
-import { applyAttempt, EMPTY_STATE, MAX_ATTEMPTS, type LadderGameState } from '../ladderEngine';
+import { applyAttempt, EMPTY_STATE, remainingFor, type LadderGameState } from '../ladderEngine';
 import { tierFor, labelsFor } from '../criticalMoments';
 import type { LadderSettings } from '../../data/ladder';
-import { otherSlot, type AttemptResult, type ItemSlot } from '../types';
+import { ALL_SLOTS, type AttemptResult, type ItemSlot } from '../types';
 
-export const TEST_SETTINGS: LadderSettings = { pointsPerSuccess: 10, decoyPointsPerSuccess: 5, skyCost: 20, underCost: 20, worldCost: 10 };
+export const TEST_SETTINGS: LadderSettings = { mirageCount: 200, skyCount: 15, underCount: 15, worldCount: 30, decoyCount: 1 };
 
 export type Step = [method: StoneMethod, success: boolean] | [method: StoneMethod, success: boolean, item: ItemSlot];
 
 /** Будує ВАЛІДНУ історію з послідовності (метод, успіх[, слот]): before/after
  * ланцюжком за правилами гри на кожному слоті, p — із RATES, роль — за
- * липким правилом рушія. Кидає, якщо крок неможливий (рівень 12+). */
+ * липким правилом рушія. ЛІМІТИ ресурсів тут навмисно не застосовуються —
+ * крафтові історії тестують логіку титулів, а не бюджети. */
 export function seqHistory(steps: Step[]): AttemptResult[] {
-  const levels: Record<ItemSlot, number> = { a: 0, b: 0 };
+  const levels: Record<ItemSlot, number> = { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 };
   let mainSlot: ItemSlot = 'a';
   const out: AttemptResult[] = [];
   for (const step of steps) {
@@ -40,7 +41,9 @@ export function seqHistory(steps: Step[]): AttemptResult[] {
       labels: labelsFor(raw, out, out.filter((h) => h.item === item)),
     });
     levels[item] = after;
-    if (levels[otherSlot(mainSlot)] > levels[mainSlot]) mainSlot = otherSlot(mainSlot);
+    for (const slot of ALL_SLOTS) {
+      if (levels[slot] > levels[mainSlot]) mainSlot = slot;
+    }
   }
   return out;
 }
@@ -67,6 +70,8 @@ export interface Pick {
 export type Strategy = (s: LadderGameState) => Pick | null;
 
 const mainLevel = (s: LadderGameState) => s.levels[s.mainSlot];
+const decoySlot = (s: LadderGameState): ItemSlot => (s.mainSlot === 'a' ? 'b' : 'a');
+const hasStone = (s: LadderGameState, m: Exclude<StoneMethod, 'mirage'>) => remainingFor(m, s, TEST_SETTINGS) > 0;
 /** Адаптер: стратегія лише по основній. */
 const onMain = (f: (s: LadderGameState) => StoneMethod): Strategy => (s) => ({ item: s.mainSlot, method: f(s) });
 
@@ -86,24 +91,24 @@ const trailingMinus = (tail: string): number => tail.length - tail.replace(/-+$/
  * поспіль, тоді — вирішальний тиць основною. */
 const coldRitualist = (k: number): Strategy => (s) => {
   if (trailingMinus(decoyTail(s)) >= k) {
-    return { item: s.mainSlot, method: mainLevel(s) >= 3 && s.points >= TEST_SETTINGS.skyCost ? 'sky' : 'mirage' };
+    return { item: s.mainSlot, method: mainLevel(s) >= 3 && hasStone(s, 'sky') ? 'sky' : 'mirage' };
   }
-  return { item: otherSlot(s.mainSlot), method: 'mirage' };
+  return { item: decoySlot(s), method: 'mirage' };
 };
 
 export const STRATEGIES: Record<string, Strategy> = {
-  /** Тільки безкоштовний міраж — базовий стиль більшості гравців. */
+  /** Тільки міражі, один предмет — базовий стиль більшості гравців. */
   mirageOnly: onMain(() => 'mirage'),
-  /** Обережний: до +3 міражем, вище — світобудовою (не втрачає рівень). */
-  worldCamper: onMain((s) => (mainLevel(s) >= 3 && s.points >= TEST_SETTINGS.worldCost ? 'world' : 'mirage')),
-  /** Агресивний: із +2 пушить небескою, поки є бали. */
-  skyPusher: onMain((s) => (mainLevel(s) >= 2 && s.points >= TEST_SETTINGS.skyCost ? 'sky' : 'mirage')),
+  /** Обережний: до +3 міражем, вище — світобудовою, поки вони є. */
+  worldCamper: onMain((s) => (mainLevel(s) >= 3 && hasStone(s, 'world') ? 'world' : 'mirage')),
+  /** Агресивний: із +2 пушить небескою, поки вони є. */
+  skyPusher: onMain((s) => (mainLevel(s) >= 2 && hasStone(s, 'sky') ? 'sky' : 'mirage')),
   /** Змішаний: підземка на +3..4, світобудова на +5+, решта міражем. */
   balanced: onMain((s) => {
     const lvl = mainLevel(s);
-    if (lvl >= 5 && s.points >= TEST_SETTINGS.worldCost) return 'world';
-    if (lvl >= 3 && s.points >= TEST_SETTINGS.underCost) return 'under';
-    if (lvl >= 1 && lvl <= 2 && s.points >= TEST_SETTINGS.skyCost && s.attempts % 7 === 0) return 'sky';
+    if (lvl >= 5 && hasStone(s, 'world')) return 'world';
+    if (lvl >= 3 && hasStone(s, 'under')) return 'under';
+    if (lvl >= 1 && lvl <= 2 && hasStone(s, 'sky') && s.attempts % 13 === 0) return 'sky';
     return 'mirage';
   }),
   /** Чекає 3 мінуси на підставній — тоді тиць основною. */
@@ -114,25 +119,25 @@ export const STRATEGIES: Record<string, Strategy> = {
   hotRitualist: (s) => {
     const tail = decoyTail(s);
     if (tail.endsWith('+')) return { item: s.mainSlot, method: 'mirage' };
-    return { item: otherSlot(s.mainSlot), method: 'mirage' };
+    return { item: decoySlot(s), method: 'mirage' };
   },
   /** Строге чергування a-b-a-b міражем. */
   metronome: (s) => ({ item: s.attempts % 2 === 0 ? 'a' : 'b', method: 'mirage' }),
   /** Точить той предмет, що нижчий — обидва ростуть, ролі часто міняються. */
   twoHands: (s) => {
     const item: ItemSlot = s.levels.a <= s.levels.b ? 'a' : 'b';
-    return { item, method: s.levels[item] >= 4 && s.points >= TEST_SETTINGS.worldCost ? 'world' : 'mirage' };
+    return { item, method: s.levels[item] >= 4 && hasStone(s, 'world') ? 'world' : 'mirage' };
   },
 };
 
-/** Чесний забіг СПРАВЖНІМ рушієм applyAttempt. */
-export function simulateRun(strategy: Strategy, roll: () => number, maxAttempts = MAX_ATTEMPTS): LadderGameState {
+/** Чесний забіг СПРАВЖНІМ рушієм applyAttempt (ресурси TEST_SETTINGS). */
+export function simulateRun(strategy: Strategy, roll: () => number): LadderGameState {
   let state: LadderGameState = EMPTY_STATE;
-  while (state.attempts < maxAttempts) {
+  while (state.attempts < TEST_SETTINGS.mirageCount) {
     const pick = strategy(state);
     if (!pick) break;
     const next = applyAttempt(state, pick.item, pick.method, TEST_SETTINGS, roll);
-    if (next === state) break; // неможлива спроба (макс. рівень / нема балів) — захист від зациклення
+    if (next === state) break; // неможлива спроба (нема ресурсу / макс. рівень)
     state = next;
   }
   return state;

@@ -17,7 +17,7 @@
 // =========================================================
 
 import type { StoneMethod } from '../data/refineRates';
-import { otherSlot, type AttemptResult, type ItemSlot } from './types';
+import { ALL_SLOTS, type AttemptResult, type ItemSlot } from './types';
 
 export interface StagnationInfo {
   length: number;
@@ -65,9 +65,9 @@ export interface SessionStats {
   /** Рівень переможця, НА якому зроблено найбільше спроб, і їх кількість. */
   favoriteLevel: { level: number; attempts: number };
   longestStagnation: StagnationInfo;
-  // ---- два предмети ----
+  // ---- предмети ----
   winnerItem: ItemSlot;
-  /** Другий (не-переможець) предмет. */
+  /** Зведення по ВСІХ не-переможцях (підставних) разом. */
   decoy: ItemStats;
   /** Скільки разів основна й підставна мінялися ролями (будь-який рівень). */
   roleSwaps: number;
@@ -135,18 +135,45 @@ function itemStats(history: AttemptResult[], item: ItemSlot): ItemStats {
   return s;
 }
 
-/** Переможець — дзеркало правила з 0008: вищий фінальний рівень, при
- * рівності — вищий пік, далі — a. */
+/** Переможець — дзеркало правила з 0009: вищий фінальний рівень, при
+ * рівності — вищий пік, далі — менша літера слота. */
 export function pickWinner(history: AttemptResult[]): ItemSlot {
-  const a = itemStats(history, 'a');
-  const b = itemStats(history, 'b');
-  return b.finalLevel > a.finalLevel || (b.finalLevel === a.finalLevel && b.peakLevel > a.peakLevel) ? 'b' : 'a';
+  let winner: ItemSlot = 'a';
+  let best = itemStats(history, 'a');
+  for (const slot of ALL_SLOTS) {
+    if (slot === 'a') continue;
+    const s = itemStats(history, slot);
+    if (s.finalLevel > best.finalLevel || (s.finalLevel === best.finalLevel && s.peakLevel > best.peakLevel)) {
+      winner = slot;
+      best = s;
+    }
+  }
+  return winner;
 }
 
 /** Історія лише предмета-переможця — для всіх рівнезалежних обчислень. */
 export function winnerHistory(history: AttemptResult[]): AttemptResult[] {
   const w = pickWinner(history);
   return history.filter((h) => h.item === w);
+}
+
+/** Зведення по ВСІХ не-переможцях разом (блок "Підставні" на фіналі):
+ * лічильники сумуються, пік/падіння/фінал — максимум по слотах. */
+function decoyAggregate(history: AttemptResult[], winner: ItemSlot): ItemStats {
+  const agg: ItemStats = { attempts: 0, successes: 0, finalLevel: 0, peakLevel: 0, timesHitZero: 0, totalLevelsLost: 0, biggestDrop: 0 };
+  for (const slot of ALL_SLOTS) {
+    if (slot === winner) continue;
+    const s = itemStats(history, slot);
+    if (s.attempts === 0) continue;
+    agg.attempts += s.attempts;
+    agg.successes += s.successes;
+    agg.timesHitZero += s.timesHitZero;
+    agg.totalLevelsLost += s.totalLevelsLost;
+    agg.finalLevel = Math.max(agg.finalLevel, s.finalLevel);
+    agg.peakLevel = Math.max(agg.peakLevel, s.peakLevel);
+    agg.biggestDrop = Math.max(agg.biggestDrop, s.biggestDrop);
+  }
+  return agg;
 }
 
 export function computeSessionStats(history: AttemptResult[]): SessionStats {
@@ -217,16 +244,20 @@ export function computeSessionStats(history: AttemptResult[]): SessionStats {
     }
   }
 
-  // ---- рокіровки: відтворюємо липке правило ролей ----
+  // ---- рокіровки: відтворюємо липке правило ролей (N слотів) ----
   let roleSwaps = 0;
   let majorSwaps = 0;
   {
-    const levels: Record<ItemSlot, number> = { a: 0, b: 0 };
+    const levels: Record<ItemSlot, number> = { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 };
     let mainSlot: ItemSlot = 'a';
     for (const h of history) {
       levels[h.item] = h.after;
-      if (levels[otherSlot(mainSlot)] > levels[mainSlot]) {
-        mainSlot = otherSlot(mainSlot);
+      let next: ItemSlot = mainSlot;
+      for (const slot of ALL_SLOTS) {
+        if (levels[slot] > levels[next]) next = slot;
+      }
+      if (next !== mainSlot) {
+        mainSlot = next;
         roleSwaps++;
         if (levels[mainSlot] >= MAJOR_SWAP_LEVEL) majorSwaps++;
       }
@@ -255,7 +286,7 @@ export function computeSessionStats(history: AttemptResult[]): SessionStats {
     favoriteLevel,
     longestStagnation: longestStagnation(main),
     winnerItem: winner,
-    decoy: itemStats(history, otherSlot(winner)),
+    decoy: decoyAggregate(history, winner),
     roleSwaps,
     majorSwaps,
   };

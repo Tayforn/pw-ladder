@@ -9,13 +9,15 @@ import type { StoneMethod } from '../data/refineRates';
 export type DramaTier = 'normal' | 'significant' | 'rare' | 'exceptional' | 'major';
 export type MomentLabel = 'ONE_TAP' | 'BACK_TO_BACK' | 'CLUTCH' | 'MIRACLE' | 'DISASTER';
 
-/** Фізичний слот предмета в забігу. */
-export type ItemSlot = 'a' | 'b';
-/** Роль предмета на момент спроби: "основна" = вищий рівень (при рівності
- * роль липка — лишається попередня), "підставна" — другий предмет. */
-export type ItemRole = 'main' | 'decoy';
+/** Фізичний слот предмета: 'a' — стартова основна, 'b'..'f' — до 5
+ * підставних (скільки реально доступно — вирішує адмінка, decoyCount). */
+export type ItemSlot = 'a' | 'b' | 'c' | 'd' | 'e' | 'f';
+export const ALL_SLOTS: ItemSlot[] = ['a', 'b', 'c', 'd', 'e', 'f'];
+export const MAX_DECOYS = 5;
 
-export const otherSlot = (slot: ItemSlot): ItemSlot => (slot === 'a' ? 'b' : 'a');
+/** Роль предмета на момент спроби: "основна" = найвищий рівень (роль липка —
+ * міняється лише коли інший слот СТРОГО вищий), решта — "підставні". */
+export type ItemRole = 'main' | 'decoy';
 
 export interface AttemptResult {
   method: StoneMethod;
@@ -26,7 +28,7 @@ export interface AttemptResult {
   p: number;
   tier: DramaTier;
   labels: MomentLabel[];
-  /** Слот предмета. Серверний тригер (0008) веде окремий ланцюжок рівнів
+  /** Слот предмета. Серверний тригер (0009) веде окремий ланцюжок рівнів
    * на кожен слот; старі історії без поля трактуються як 'a'. */
   item: ItemSlot;
   /** Роль на момент спроби — клієнтське поле для ритуал-аналізу й UI

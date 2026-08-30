@@ -688,3 +688,9 @@ body.modal-open { overflow: hidden; }
 .rules ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
 .rules li::marker { color: var(--text-mute); }
 .rules .field { margin-top: 4px; }
+
+/* Клікабельні рядки ладдера і нагороди (попап перегляду забігу) */
+.row-clickable { cursor: pointer; }
+tr.row-clickable:hover td { background: rgba(var(--accent-3-rgb), 0.07); }
+.award-chip.row-clickable { transition: border-color 0.15s, transform 0.1s; }
+.award-chip.row-clickable:hover { border-color: rgba(var(--accent-3-rgb), 0.5); transform: translateY(-1px); }

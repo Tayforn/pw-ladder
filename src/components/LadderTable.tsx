@@ -1,10 +1,20 @@
 // =========================================================
 // Публічна таблиця лідерів — рядок поточного гравця підсвічується.
+// onSelect (опційно) робить рядки клікабельними: App відкриває попап
+// перегляду збереженого забігу гравця (той самий фінальний екран).
 // =========================================================
 
 import type { LadderEntry } from '../data/ladder';
 
-export default function LadderTable({ entries, nickname }: { entries: LadderEntry[]; nickname: string }) {
+export default function LadderTable({
+  entries,
+  nickname,
+  onSelect,
+}: {
+  entries: LadderEntry[];
+  nickname: string;
+  onSelect?: (nickname: string) => void;
+}) {
   if (entries.length === 0) {
     return <p className="hint">Ладдер поки порожній — стань першим!</p>;
   }
@@ -22,7 +32,12 @@ export default function LadderTable({ entries, nickname }: { entries: LadderEntr
         </thead>
         <tbody>
           {entries.map((e, i) => (
-            <tr key={e.nickname} className={e.nickname === nickname ? 'winner' : undefined}>
+            <tr
+              key={e.nickname}
+              className={(e.nickname === nickname ? 'winner ' : '') + (onSelect ? 'row-clickable' : '') || undefined}
+              title={onSelect ? `Переглянути найкращий забіг «${e.nickname}»` : undefined}
+              onClick={onSelect ? () => onSelect(e.nickname) : undefined}
+            >
               <td>{i + 1}</td>
               <td>{e.nickname}</td>
               <td className="num">+{e.level}</td>

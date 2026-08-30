@@ -60,6 +60,8 @@ export default function FinalResultScreen({
   busted,
   runContinues,
   settings,
+  viewOnly = false,
+  title = 'Результат забігу',
   onTryAgain,
   onViewLeaderboard,
 }: {
@@ -75,6 +77,13 @@ export default function FinalResultScreen({
   runContinues: boolean;
   /** Ліміти ресурсів — для рядків "використано X із Y". */
   settings: LadderSettings;
+  /** Режим ПЕРЕГЛЯДУ чужого (чи свого) збереженого забігу з ладдера:
+   * без рядків про сабміт/ліміти поточного забігу, з однією кнопкою
+   * "Закрити" і без лімітів у розбивці ресурсів (забіг міг бути зіграний
+   * за інших налаштувань). */
+  viewOnly?: boolean;
+  /** Заголовок модалки (за замовчуванням "Результат забігу"). */
+  title?: string;
   onTryAgain: () => void;
   onViewLeaderboard: () => void;
 }) {
@@ -84,7 +93,7 @@ export default function FinalResultScreen({
   return (
     <Modal className="result-modal" onClose={onTryAgain}>
       <div className="modal-head">
-        <h3>Результат забігу</h3>
+        <h3>{title}</h3>
       </div>
       <div className="modal-body">
         {busted && (
@@ -112,13 +121,13 @@ export default function FinalResultScreen({
           </div>
 
           {submitMsg && <p className="hint" style={{ margin: 0 }}>{submitMsg}</p>}
-          {runContinues ? (
+          {!viewOnly && (runContinues ? (
             <p className="hint" style={{ margin: 0 }}>Забіг триває: використано {stats.attemptsUsed} із {settings.mirageCount} міражів.</p>
           ) : (
             stats.attemptsUsed < settings.mirageCount && (
               <p className="hint" style={{ margin: 0 }}>Міражів лишалось: {settings.mirageCount - stats.attemptsUsed} — забіг завершено вручну.</p>
             )
-          )}
+          ))}
 
           <div className="result-stats-grid">
             <Stat label="Спроб" value={stats.attemptsUsed} />
@@ -155,12 +164,13 @@ export default function FinalResultScreen({
                 : m === 'under' ? settings.underCount
                 : settings.worldCount;
               const used = m === 'mirage' ? stats.attemptsUsed : stats.methodCounts[m];
+              // У перегляді збереженого забігу поточні ліміти не показуємо —
+              // він міг бути зіграний за інших налаштувань.
+              const value = viewOnly
+                ? (used > 0 ? `${used} · ${stats.methodSuccesses[m]}✓` : '—')
+                : (used > 0 ? `${used}/${limit} · ${stats.methodSuccesses[m]}✓` : `0/${limit}`);
               return (
-                <Stat
-                  key={m}
-                  label={m === 'mirage' ? 'Міражі (спроби)' : STONE_LABEL[m]}
-                  value={used > 0 ? `${used}/${limit} · ${stats.methodSuccesses[m]}✓` : `0/${limit}`}
-                />
+                <Stat key={m} label={m === 'mirage' ? 'Міражі (спроби)' : STONE_LABEL[m]} value={value} />
               );
             })}
           </div>
@@ -248,10 +258,16 @@ export default function FinalResultScreen({
         {showHistory && <AttemptHistoryList history={history} style={{ marginTop: 10 }} />}
       </div>
       <div className="modal-foot">
-        <button type="button" className="btn btn-ghost" onClick={onViewLeaderboard}>Перейти до ладдера</button>
-        <button type="button" className="btn btn-primary" onClick={onTryAgain}>
-          {runContinues ? 'Продовжити забіг' : 'Спробувати ще раз'}
-        </button>
+        {viewOnly ? (
+          <button type="button" className="btn btn-primary" onClick={onTryAgain}>Закрити</button>
+        ) : (
+          <>
+            <button type="button" className="btn btn-ghost" onClick={onViewLeaderboard}>Перейти до ладдера</button>
+            <button type="button" className="btn btn-primary" onClick={onTryAgain}>
+              {runContinues ? 'Продовжити забіг' : 'Спробувати ще раз'}
+            </button>
+          </>
+        )}
       </div>
     </Modal>
   );

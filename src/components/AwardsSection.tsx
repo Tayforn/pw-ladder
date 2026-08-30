@@ -29,7 +29,14 @@ function fastestPeak(entries: LadderEntry[]): LadderEntry | null {
   return pool.reduce((a, b) => (b.peakAttempt < a.peakAttempt ? b : a));
 }
 
-export default function AwardsSection({ entries }: { entries: LadderEntry[] }) {
+export default function AwardsSection({
+  entries,
+  onSelect,
+}: {
+  entries: LadderEntry[];
+  /** Клік по нагороді відкриває забіг її власника (як у таблиці ладдера). */
+  onSelect?: (nickname: string) => void;
+}) {
   if (entries.length === 0) return null;
 
   const luckiest = bestBy(entries, 'luckScore', true);
@@ -62,7 +69,12 @@ export default function AwardsSection({ entries }: { entries: LadderEntry[] }) {
       <h3 style={{ marginTop: 28 }}>Спецнагороди</h3>
       <div className="awards-grid">
         {awards.map((a) => (
-          <div key={a.label} className="award-chip" title={a.hint}>
+          <div
+            key={a.label}
+            className={'award-chip' + (onSelect ? ' row-clickable' : '')}
+            title={a.hint + (onSelect ? ` Клік — забіг «${a.entry.nickname}».` : '')}
+            onClick={onSelect ? () => onSelect(a.entry.nickname) : undefined}
+          >
             <span className="award-label">{a.label}</span>
             <span className="award-nick">{a.entry.nickname}</span>
             <span className="award-value">{a.value}</span>

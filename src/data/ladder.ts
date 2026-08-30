@@ -192,6 +192,19 @@ export async function submitIfBetter(
   return { submitted: true };
 }
 
+/** Повна історія найкращого забігу гравця — для попапа перегляду по кліку
+ * на рядок ладдера. Єдине місце, де history читається з БД (списки її не
+ * тягнуть). Порожній масив — запис створено до 0005 (історії немає). */
+export async function fetchEntryHistory(nickname: string): Promise<AttemptResult[]> {
+  const { data, error } = await supabase
+    .from('ladder_entries')
+    .select('history')
+    .eq('nickname', nickname)
+    .maybeSingle();
+  if (error) throw error;
+  return ((data as { history?: AttemptResult[] } | null)?.history ?? []);
+}
+
 export async function resetLadder(): Promise<void> {
   const { error } = await supabase.from('ladder_entries').delete().neq('nickname', '');
   if (error) throw error;

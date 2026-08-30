@@ -19,8 +19,8 @@ import SimulatorCard from './components/SimulatorCard';
 import FinalResultScreen from './components/FinalResultScreen';
 import { reportError, errorMessage } from './app/errorMessage';
 import { useLadderData } from './app/useLadderData';
-import { submitIfBetter, type LadderStats } from './data/ladder';
-import { useLadderGame, ladderLevel, type AttemptResult } from './lib/ladderEngine';
+import { fetchEntryHistory, submitIfBetter, type LadderStats } from './data/ladder';
+import { useLadderGame, ladderLevel, normalizeHistory, type AttemptResult } from './lib/ladderEngine';
 import { computeRitualStats, type RitualStats } from './lib/ritual';
 import { computeSessionStats, type SessionStats } from './lib/sessionStats';
 import { computeRngProfile, type RngProfile } from './lib/rngProfile';
@@ -33,13 +33,18 @@ const INFO_SEEN_KEY = 'ladder-info-seen';
 const LADDER_SECTION_ID = 'ladder-section';
 const TOP_N = 10;
 
-interface FinalResult {
+/** Усе, що фінальний екран рахує з історії, — спільне для щойно зіграного
+ * забігу і для перегляду збереженого запису з ладдера. */
+interface RunReport {
   history: AttemptResult[];
   stats: SessionStats;
   profile: RngProfile;
   titles: { qualified: TitleResult[]; primary: TitleResult | null };
   shame: ShameEntry[];
   ritual: RitualStats;
+}
+
+interface FinalResult extends RunReport {
   submitMsg: string;
   /** Результат НЕ зараховано (попередній кращий) і прогрес НЕ скинуто. */
   runContinues: boolean;
@@ -85,6 +90,8 @@ export default function App() {
   });
   const [showPrizes, setShowPrizes] = useState(false);
   const [finalResult, setFinalResult] = useState<FinalResult | null>(null);
+  /** Перегляд збереженого забігу учасника ладдера (клік по рядку/нагороді). */
+  const [viewRun, setViewRun] = useState<(RunReport & { nickname: string }) | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const { settings, entries, reload, reloadSettings } = useLadderData();
@@ -102,10 +109,9 @@ export default function App() {
     setShowInfo(false);
   };
 
-  const doSubmit = async (auto: boolean) => {
-    if (!nickname) return;
-    // Знімок ДО скидання — фінальний екран показує саме цей забіг.
-    const history = game.state.history;
+  /** Уся похідна аналітика забігу з його історії — для фінального екрана
+   * і для попапа перегляду запису ладдера. */
+  const deriveRun = (history: AttemptResult[]): RunReport => {
     const stats = computeSessionStats(history);
     const profile = computeRngProfile(history, stats);
     // Порожній (завантажений) ладдер — рекорд 0: перший гравець теж ОБРАНИЙ.
@@ -113,7 +119,29 @@ export default function App() {
     const ritual = computeRitualStats(history);
     const titles = evaluateTitles(history, stats, profile, currentRecordLevel, ritual);
     const shame = buildHallOfShame(history, stats);
-    const base = { history, stats, profile, titles, shame, ritual };
+    return { history, stats, profile, titles, shame, ritual };
+  };
+
+  const openEntry = async (nick: string) => {
+    try {
+      const raw = await fetchEntryHistory(nick);
+      if (raw.length === 0) {
+        alert(`Історія забігу «${nick}» не збереглась — запис створено до появи журналювання.`);
+        return;
+      }
+      setViewRun({ nickname: nick, ...deriveRun(normalizeHistory(raw)) });
+    } catch (e) {
+      reportError(e);
+    }
+  };
+
+  const doSubmit = async (auto: boolean) => {
+    if (!nickname) return;
+    // Знімок ДО скидання — фінальний екран показує саме цей забіг.
+    const history = game.state.history;
+    const base = deriveRun(history);
+    const stats = base.stats;
+    const profile = base.profile;
 
     setSubmitting(true);
     try {
@@ -209,11 +237,12 @@ export default function App() {
           />
 
           <h3 id={LADDER_SECTION_ID} style={{ marginTop: 28 }}>Ладдер · Топ 10</h3>
+          <p className="hint" style={{ margin: '4px 0 10px' }}>Клікни по учаснику — відкриється його найкращий забіг з титулами й статистикою.</p>
           <div className="card">
-            <LadderTable entries={top10} nickname={nickname} />
+            <LadderTable entries={top10} nickname={nickname} onSelect={openEntry} />
           </div>
 
-          <AwardsSection entries={entries} />
+          <AwardsSection entries={entries} onSelect={openEntry} />
         </main>
       </div>
       <Footer />
@@ -245,6 +274,24 @@ export default function App() {
             setFinalResult(null);
             document.getElementById(LADDER_SECTION_ID)?.scrollIntoView({ behavior: 'smooth' });
           }}
+        />
+      )}
+      {viewRun && !finalResult && (
+        <FinalResultScreen
+          nickname={viewRun.nickname}
+          history={viewRun.history}
+          stats={viewRun.stats}
+          profile={viewRun.profile}
+          titles={viewRun.titles}
+          shame={viewRun.shame}
+          ritual={viewRun.ritual}
+          submitMsg={null}
+          runContinues={false}
+          settings={settings}
+          viewOnly
+          title={`Найкращий забіг: ${viewRun.nickname}`}
+          onTryAgain={() => setViewRun(null)}
+          onViewLeaderboard={() => setViewRun(null)}
         />
       )}
     </>

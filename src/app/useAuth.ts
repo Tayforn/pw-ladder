@@ -1,7 +1,7 @@
 // =========================================================
-// Стан авторизації адміна: сесія Supabase Auth + перевірка allow-list
-// таблиці `admins` (той самий проєкт/allow-list, що thunder-info — RLS-
-// функція is_admin() уже існує в БД, тут лише читаємо результат для UI).
+// Стан авторизації адміна: сесія Supabase Auth + перевірка ВЛАСНОГО
+// allow-list ладдера `ladder_admins` (0010) — рівно один адмін, окремо
+// від спільної таблиці admins інших сайтів проєкту.
 //
 // loading перемикається лише при ПЕРШОМУ визначенні сесії — повторні
 // onAuthStateChange (напр. рефреш токена при поверненні фокусу на вкладку)
@@ -32,7 +32,7 @@ export function useAuth(): AuthState {
         if (!cancelled) setIsAdmin(false);
         return;
       }
-      const { data } = await supabase.from('admins').select('user_id').eq('user_id', s.user.id).maybeSingle();
+      const { data } = await supabase.from('ladder_admins').select('user_id').eq('user_id', s.user.id).maybeSingle();
       if (!cancelled) setIsAdmin(!!data);
     }
 

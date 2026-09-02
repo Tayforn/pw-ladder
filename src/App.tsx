@@ -26,7 +26,7 @@ import { computeSessionStats, type SessionStats } from './lib/sessionStats';
 import { computeRngProfile, type RngProfile } from './lib/rngProfile';
 import { evaluateTitles, type TitleResult } from './lib/titles';
 import { buildHallOfShame, type ShameEntry } from './lib/hallOfShame';
-import { isValidationRejection, bustedJokeFor, type BustedJoke } from './lib/cheatBusted';
+import { isLimitsRejection, isValidationRejection, bustedJokeFor, type BustedJoke } from './lib/cheatBusted';
 
 const NICK_KEY = 'ladder-nickname';
 const INFO_SEEN_KEY = 'ladder-info-seen';
@@ -165,8 +165,20 @@ export default function App() {
       if (submitted) reload();
     } catch (e) {
       const msg = errorMessage(e, '');
-      const busted = isValidationRejection(msg) ? bustedJokeFor(msg) : undefined;
-      if (auto) {
+      // Ліміти ресурсів — не читерство: адмін міг змінити правила посеред
+      // забігу. Нейтральне пояснення замість "спіймано на гарячому".
+      const limitsChanged = isLimitsRejection(msg);
+      const busted = !limitsChanged && isValidationRejection(msg) ? bustedJokeFor(msg) : undefined;
+      if (limitsChanged) {
+        if (auto) game.reset();
+        setFinalResult({
+          ...base,
+          submitMsg: auto
+            ? 'Сервер не прийняв забіг: ліміти ресурсів змінилися під час гри (адмін оновив правила — це НЕ звинувачення в читерстві). Лічильники скинуто, новий забіг піде за новими лімітами.'
+            : 'Сервер не прийняв забіг: ліміти ресурсів змінилися під час гри — цей забіг зіграно за старими правилами (це НЕ звинувачення в читерстві). Прогрес не скинуто.',
+          runContinues: !auto,
+        });
+      } else if (auto) {
         // Ліміт спроб вичерпано — скидаємо прогрес НАВІТЬ якщо внесення в
         // ладдер не вдалося (напр. мережева помилка): застрягти назавжди
         // на 200/200 (кнопки задизейблені) гірше, ніж втратити результат.

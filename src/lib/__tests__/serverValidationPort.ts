@@ -2,7 +2,7 @@
 // TS-порт функції ladder_entries_validate() з міграції 0009 — рядок у
 // рядок повторює серверну логіку: ланцюжки рівнів по слотах 'a'..'f',
 // вибір переможця, перерахунок статистики, luck ±1, ліміти ресурсів
-// "жорстко з запасом ×1.5", обчислювані поля спецнагород. Використовується
+// "жорстко з запасом ×1.5" (кап спроб — від поля mirage_count, 0011), обчислювані поля спецнагород. Використовується
 // property-тестом "чесний забіг НІКОЛИ не відхиляється"
 // (serverParity.test.ts): якщо хтось змінить клієнтські формули, правило
 // переможця або RATES без синхронного апдейту SQL — цей тест впаде першим,
@@ -57,8 +57,10 @@ export function validateLikeServer(
   if (n !== entry.attempts) {
     throw new Error(`ladder_entries: довжина history (${n}) не дорівнює attempts (${entry.attempts})`);
   }
-  if (entry.attempts > 500) {
-    throw new Error(`ladder_entries: attempts (${entry.attempts}) перевищує абсолютний ліміт 500`);
+  // Кап спроб прив'язаний до ПОЛЯ mirage_count (0011); запасний — 3000.
+  const maxAttempts = limits ? Math.ceil(limits.mirageCount * 1.5) : 3000;
+  if (entry.attempts > maxAttempts) {
+    throw new Error(`ladder_entries: спроб/міражів (${entry.attempts}) понад ліміт ${maxAttempts} (з запасом)`);
   }
 
   let curStreak = 0;
@@ -168,9 +170,6 @@ export function validateLikeServer(
 
   // Ліміти ресурсів: жорстко, але з запасом ×1.5 від поточних налаштувань.
   if (limits) {
-    if (entry.attempts > Math.ceil(limits.mirageCount * 1.5)) {
-      throw new Error(`ladder_entries: спроб/міражів (${entry.attempts}) понад ліміт ${limits.mirageCount} (з запасом)`);
-    }
     if (skyN > Math.ceil(limits.skyCount * 1.5)) {
       throw new Error(`ladder_entries: небесок (${skyN}) понад ліміт ${limits.skyCount} (з запасом)`);
     }

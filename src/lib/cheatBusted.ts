@@ -33,9 +33,9 @@ const JOKES: Array<{ match: RegExp; title: string; line: string }> = [
     line: 'Кількість спроб не збігається з довжиною надісланого журналу спроб.',
   },
   {
-    match: /points/i,
-    title: '💰 ВЛАСНИЙ ДРУКАРСЬКИЙ ВЕРСТАТ',
-    line: 'Балів більше, ніж фізично можна заробити за таку кількість спроб.',
+    match: /не збігається з рівнем предмета/i,
+    title: '🧵 ПЕРЕПЛУТАНІ ЛАНЦЮЖКИ',
+    line: 'Історія предмета згадує рівень, якого він не мав. Сервер веде кожен предмет окремо.',
   },
   {
     match: /статистика .* не відповідає/i,
@@ -57,6 +57,14 @@ const DEFAULT_JOKE: BustedJoke = {
 /** Чи це саме відхилення нашим тригером валідації (а не мережева/інша помилка). */
 export function isValidationRejection(message: string): boolean {
   return message.includes('ladder_entries:');
+}
+
+/** Відхилення через ЛІМІТИ РЕСУРСІВ — НЕ звинувачення в читерстві: чесна
+ * гра теж сюди потрапляє, якщо адмін змінив ліміти посеред забігу (запас
+ * ×1.5 не безмежний) або забіг почато за старих правил. Показуємо
+ * нейтральне пояснення замість "спіймано на гарячому". */
+export function isLimitsRejection(message: string): boolean {
+  return /понад ліміт|перевищує абсолютний ліміт/.test(message);
 }
 
 export function bustedJokeFor(message: string): BustedJoke {

@@ -160,7 +160,7 @@ export default function AdminPanel({
         Підставні — кількість додаткових слотів предметів (0–5).
       </p>
       <div className="field-row admin-field-row">
-        <NumberField label="Міражі (спроби)" value={settings.mirageCount} onSave={(v) => save({ mirageCount: v })} />
+        <NumberField label="Міражі (спроби)" value={settings.mirageCount} onSave={(v) => save({ mirageCount: Math.max(1, Math.min(10000, Math.round(v))) })} />
         <NumberField label="Небески" value={settings.skyCount} onSave={(v) => save({ skyCount: v })} />
         <NumberField label="Підземки" value={settings.underCount} onSave={(v) => save({ underCount: v })} />
         <NumberField label="Світобудови" value={settings.worldCount} onSave={(v) => save({ worldCount: v })} />

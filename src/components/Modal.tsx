@@ -6,7 +6,11 @@
 // лічильника вкладеності достатній.
 // =========================================================
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+
+/** Стек відкритих модалок: Esc закриває лише ВЕРХНЮ (напр. розгорнутий
+ * графік поверх фінального екрана), а не всі одразу. */
+const modalStack: symbol[] = [];
 
 export default function Modal({
   onClose,
@@ -20,15 +24,22 @@ export default function Modal({
   className?: string;
   children: ReactNode;
 }) {
+  const idRef = useRef<symbol | null>(null);
+  if (!idRef.current) idRef.current = Symbol('modal');
+
   useEffect(() => {
+    const id = idRef.current!;
+    modalStack.push(id);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && onClose) onClose();
+      if (e.key === 'Escape' && onClose && modalStack[modalStack.length - 1] === id) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => {
-      document.body.style.overflow = prevOverflow;
+      const i = modalStack.indexOf(id);
+      if (i >= 0) modalStack.splice(i, 1);
+      document.body.style.overflow = modalStack.length > 0 ? 'hidden' : prevOverflow;
       window.removeEventListener('keydown', onKey);
     };
   }, [onClose]);

@@ -661,8 +661,17 @@ body.modal-open { overflow: hidden; }
 .sim-display-compact { grid-template-columns: 1fr; gap: 8px; padding: 14px 18px; }
 .sim-display-compact .sim-target-info { flex-direction: row; flex-wrap: wrap; gap: 6px 18px; }
 .sim-ritual-banner {
-  margin: -6px 0 14px; padding: 10px 14px; border-radius: var(--radius); font-size: 13px;
-  background: rgba(var(--warn-rgb), 0.1); border: 1px solid rgba(var(--warn-rgb), 0.35); color: var(--text);
+  /* Слот зарезервовано завжди — контент з'являється без зсуву верстки. */
+  min-height: 40px; box-sizing: border-box; display: flex; align-items: center; flex-wrap: wrap; gap: 3px;
+  margin: 10px 0 14px; padding: 8px 14px; border-radius: var(--radius); font-size: 13px;
+  background: transparent; border: 1px solid transparent; color: var(--text);
+  transition: background 0.2s, border-color 0.2s, opacity 0.2s; opacity: 0;
+}
+.sim-ritual-banner.visible {
+  background: rgba(var(--warn-rgb), 0.1); border-color: rgba(var(--warn-rgb), 0.35); opacity: 1;
+}
+@media (max-width: 640px) {
+  .sim-ritual-banner { min-height: 56px; }
 }
 .item-badge {
   display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;

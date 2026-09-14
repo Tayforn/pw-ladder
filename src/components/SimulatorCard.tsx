@@ -142,13 +142,6 @@ export default function SimulatorCard({
         </div>
       </div>
 
-      {decoyColdTail >= RITUAL_HINT_STREAK && (
-        <div className="sim-ritual-banner">
-          🔥 ГВЧ прогрітий? <b>{decoyColdTail}</b> {minusWord(decoyColdTail)} поспіль на підставній.
-          Вирішальний тиць — за тобою. <span className="muted">(Шанси, звісно, ті самі.)</span>
-        </div>
-      )}
-
       <button
         type="button"
         className="btn btn-primary btn-lg sim-mirage-btn"
@@ -158,6 +151,17 @@ export default function SimulatorCard({
         ⚒ Заточити {activeRole === 'main' ? 'основну' : 'підставну'} (міраж)
         <span className="sim-mirage-rate">{mirageRate ? (mirageRate * 100).toFixed(2) + '%' : '—'}</span>
       </button>
+
+      {/* Слот банера зарезервований ЗАВЖДИ (фіксована висота) — поява/зникнення
+          підказки не рухає ні кнопку зверху, ні камені знизу. */}
+      <div className={'sim-ritual-banner' + (decoyColdTail >= RITUAL_HINT_STREAK ? ' visible' : '')} aria-live="polite">
+        {decoyColdTail >= RITUAL_HINT_STREAK && (
+          <>
+            🔥 ГВЧ прогрітий? <b>{decoyColdTail}</b> {minusWord(decoyColdTail)} поспіль на підставній.
+            Вирішальний тиць — за тобою. <span className="muted">(Шанси, звісно, ті самі.)</span>
+          </>
+        )}
+      </div>
 
       <div className="sim-stones-row">
         <div className="sim-stones">

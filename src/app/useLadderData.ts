@@ -15,7 +15,7 @@ import {
 } from '../data/ladder';
 import { reportError } from './errorMessage';
 
-export const DEFAULT_SETTINGS: LadderSettings = { mirageCount: 200, skyCount: 15, underCount: 15, worldCount: 30, decoyCount: 1 };
+export const DEFAULT_SETTINGS: LadderSettings = { mirageCount: 200, skyCount: 15, underCount: 15, worldCount: 30, decoyCount: 1, resetUnlockAttempts: 100 };
 
 const RELOAD_DEBOUNCE_MS = 400;
 

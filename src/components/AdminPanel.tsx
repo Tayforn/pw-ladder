@@ -157,7 +157,8 @@ export default function AdminPanel({
       <h3 style={{ marginTop: 0 }}>Ресурси на забіг</h3>
       <p className="hint" style={{ marginTop: 4, marginBottom: 12 }}>
         Міражі = ліміт спроб (кожна спроба будь-чим споживає 1 міраж; камінь — додатково 1 свою одиницю).
-        Підставні — кількість додаткових слотів предметів (0–5).
+        Підставні — кількість додаткових слотів предметів (0–5). «Скидання після» — зі скількох спроб
+        гравцю розблоковується «Скинути прогрес» без внесення в ладдер.
       </p>
       <div className="field-row admin-field-row">
         <NumberField label="Міражі (спроби)" value={settings.mirageCount} onSave={(v) => save({ mirageCount: Math.max(1, Math.min(10000, Math.round(v))) })} />
@@ -165,6 +166,7 @@ export default function AdminPanel({
         <NumberField label="Підземки" value={settings.underCount} onSave={(v) => save({ underCount: v })} />
         <NumberField label="Світобудови" value={settings.worldCount} onSave={(v) => save({ worldCount: v })} />
         <NumberField label="Підставні шмотки" value={settings.decoyCount} onSave={(v) => save({ decoyCount: Math.min(5, Math.round(v)) })} />
+        <NumberField label="Скидання після (спроб)" value={settings.resetUnlockAttempts} onSave={(v) => save({ resetUnlockAttempts: Math.max(0, Math.round(v)) })} />
       </div>
       <button type="button" className="btn btn-bad" disabled={busy} onClick={doReset} style={{ marginTop: 16 }}>
         Обнулити ладдер

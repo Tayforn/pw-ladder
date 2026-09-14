@@ -18,6 +18,8 @@ export interface LadderSettings {
   worldCount: number;
   /** Кількість підставних шмоток (слотів 'b'..'f'), 0..5. */
   decoyCount: number;
+  /** Після скількох спроб розблоковується «Скинути прогрес» (0012). */
+  resetUnlockAttempts: number;
 }
 
 /** Розширена статистика ОДНОГО (найкращого) забігу гравця — потрібна для
@@ -55,6 +57,7 @@ interface SettingsRow {
   under_count: number;
   world_count: number;
   decoy_count: number;
+  reset_unlock_attempts: number;
 }
 interface EntryRow {
   nickname: string;
@@ -88,6 +91,9 @@ const settingsFromRow = (r: SettingsRow): LadderSettings => ({
   underCount: r.under_count ?? 15,
   worldCount: r.world_count ?? 30,
   decoyCount: r.decoy_count ?? 1,
+  // До прогону 0012 колонки немає — відтворюємо стару поведінку
+  // «половина міражів», щоб поріг не стрибав.
+  resetUnlockAttempts: r.reset_unlock_attempts ?? Math.ceil((r.mirage_count ?? 200) / 2),
 });
 const entryFromRow = (r: EntryRow): LadderEntry => ({
   nickname: r.nickname,
@@ -133,6 +139,7 @@ export async function updateSettings(patch: Partial<LadderSettings>): Promise<vo
   if (patch.underCount !== undefined) row.under_count = patch.underCount;
   if (patch.worldCount !== undefined) row.world_count = patch.worldCount;
   if (patch.decoyCount !== undefined) row.decoy_count = patch.decoyCount;
+  if (patch.resetUnlockAttempts !== undefined) row.reset_unlock_attempts = patch.resetUnlockAttempts;
   const { error } = await supabase.from('ladder_settings').update(row).eq('id', 1);
   if (error) throw error;
 }

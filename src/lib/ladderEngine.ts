@@ -60,8 +60,8 @@ export function remainingFor(method: StoneMethod, s: LadderGameState, settings: 
   return Math.max(0, limit - s.used[method]);
 }
 
-/** Поріг розблокування "Скинути прогрес" — половина міражів. */
-export const resetUnlockAt = (settings: LadderSettings): number => Math.ceil(settings.mirageCount / 2);
+/** Поріг розблокування "Скинути прогрес" — окреме поле адмінки (0012). */
+export const resetUnlockAt = (settings: LadderSettings): number => Math.max(0, settings.resetUnlockAttempts);
 
 /** Слоти, доступні в поточних налаштуваннях: 'a' + decoyCount підставних.
  * Слоти, на яких УЖЕ є історія (адмін зменшив ліміт посеред забігу),

@@ -12,7 +12,7 @@ import { tierFor, labelsFor } from '../criticalMoments';
 import type { LadderSettings } from '../../data/ladder';
 import { ALL_SLOTS, type AttemptResult, type ItemSlot } from '../types';
 
-export const TEST_SETTINGS: LadderSettings = { mirageCount: 200, skyCount: 15, underCount: 15, worldCount: 30, decoyCount: 1 };
+export const TEST_SETTINGS: LadderSettings = { mirageCount: 200, skyCount: 15, underCount: 15, worldCount: 30, decoyCount: 1, resetUnlockAttempts: 100 };
 
 export type Step = [method: StoneMethod, success: boolean] | [method: StoneMethod, success: boolean, item: ItemSlot];
 

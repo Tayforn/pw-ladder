@@ -3,13 +3,14 @@
 // Лінії: предмет-переможець яскравий, підставні — приглушені пунктири;
 // x — глобальний номер спроби. Позначки: пік переможця, значущі рокіровки.
 //
-// Інтерактив: наведення на графік підсвічує найближчу спробу (приціл +
-// збільшений вузол + підсвітка лінії її предмета) і показує деталі в
-// панелі під графіком; кнопка ⛶ розгортає графік на весь екран (Esc /
-// клік поза вікном — закрити). Легенда з поясненнями — під графіком.
+// Інтерактив: наведення підсвічує найближчу спробу (приціл + панель
+// деталей ФІКСОВАНОЇ висоти — верстка не смикається); кнопка ⛶ розгортає
+// графік на весь екран, де працює зум колесиком (навколо курсора),
+// панорамування перетягуванням і скидання подвійним кліком; "Ключові
+// моменти" і легенда — під графіком.
 // =========================================================
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MAX_LEVEL, STONE_LABEL } from '../data/refineRates';
 import { MAJOR_SWAP_LEVEL, pickWinner } from '../lib/sessionStats';
 import { LABEL_TEXT, TIER_LABEL } from '../lib/criticalMoments';
@@ -19,6 +20,7 @@ import Modal from './Modal';
 const W = 700;
 const H = 200;
 const PAD = 22;
+const MAX_ZOOM = 20;
 
 interface Pt {
   x: number;
@@ -26,6 +28,16 @@ interface Pt {
   h: AttemptResult;
   idx: number; // 1-based глобальний номер спроби
 }
+
+interface ViewBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const FULL_VIEW: ViewBox = { x: 0, y: 0, w: W, h: H };
+const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
 export default function HistoryGraph({ history }: { history: AttemptResult[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -69,8 +81,6 @@ export default function HistoryGraph({ history }: { history: AttemptResult[] }) 
     for (let n = step; n <= history.length; n += step) xTicks.push(n);
 
     // Ключові моменти — для аналізу забігу (свого чи чужого в попапі).
-    // Кожен момент прив'язаний до номера спроби; наведення підсвічує його
-    // на графіку.
     const moments: Array<{ idx: number; text: string }> = [];
     moments.push({ idx: peak.idx, text: `Пік +${peak.h.after} — спроба №${peak.idx}` });
     {
@@ -112,7 +122,7 @@ export default function HistoryGraph({ history }: { history: AttemptResult[] }) 
   }, [history]);
 
   if (!data) return null;
-  const { winner, all, series, peak, swaps, xTicks, moments, xFor } = data;
+  const { winner, all, series, peak, swaps, xTicks, moments } = data;
   const hovered = hoverIdx !== null ? all[hoverIdx] : null;
 
   const pathOf = (pts: Pt[]) => pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
@@ -145,27 +155,24 @@ export default function HistoryGraph({ history }: { history: AttemptResult[] }) 
     </div>
   );
 
-  const svg = (cls: string) => (
-    <GraphSvg
-      className={cls}
-      all={all}
-      series={series}
-      winner={winner}
-      peak={peak}
-      swaps={swaps}
-      xTicks={xTicks}
-      xFor={xFor}
-      yFor={data.yFor}
-      hovered={hovered}
-      hoveredSlot={hovered?.h.item ?? null}
-      pathOf={pathOf}
-      onHover={setHoverIdx}
-    />
-  );
-
-  const body = (cls: string) => (
+  const body = (cls: string, zoomable: boolean) => (
     <>
-      {svg(cls)}
+      <GraphSvg
+        className={cls}
+        zoomable={zoomable}
+        all={all}
+        series={series}
+        winner={winner}
+        peak={peak}
+        swaps={swaps}
+        xTicks={xTicks}
+        xFor={data.xFor}
+        yFor={data.yFor}
+        hovered={hovered}
+        hoveredSlot={hovered?.h.item ?? null}
+        pathOf={pathOf}
+        onHover={setHoverIdx}
+      />
       <div className="graph-info">{infoLine}</div>
       {moments.length > 0 && (
         <div className="graph-moments">
@@ -194,15 +201,16 @@ export default function HistoryGraph({ history }: { history: AttemptResult[] }) 
           ⛶ Розгорнути
         </button>
       </div>
-      {body('history-graph-svg')}
+      {body('history-graph-svg', false)}
       {expanded && (
         <Modal className="modal-graph" onClose={() => setExpanded(false)}>
           <div className="modal-head">
             <h3>Подорож забігу · {history.length} спроб</h3>
+            <span className="hint graph-zoom-hint">🖱 колесо — масштаб · перетягни — рух · подвійний клік — скинути</span>
             <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setExpanded(false)}>✕ Закрити</button>
           </div>
           <div className="modal-body">
-            {body('history-graph-svg history-graph-svg-full')}
+            {body('history-graph-svg history-graph-svg-full', true)}
           </div>
         </Modal>
       )}
@@ -212,6 +220,7 @@ export default function HistoryGraph({ history }: { history: AttemptResult[] }) 
 
 function GraphSvg({
   className,
+  zoomable,
   all,
   series,
   winner,
@@ -226,6 +235,7 @@ function GraphSvg({
   onHover,
 }: {
   className: string;
+  zoomable: boolean;
   all: Pt[];
   series: Map<ItemSlot, Pt[]>;
   winner: ItemSlot;
@@ -240,15 +250,70 @@ function GraphSvg({
   onHover: (idx: number | null) => void;
 }) {
   const ref = useRef<SVGSVGElement>(null);
+  const [view, setView] = useState<ViewBox>(FULL_VIEW);
+  const drag = useRef<{ clientX: number; clientY: number; viewX: number; viewY: number } | null>(null);
+  const zoomed = view.w < W - 0.5;
+  // Масштаб у "юзерських одиницях на піксель" при поточному зумі — щоб
+  // написи/приціл лишалися однакового ЕКРАННОГО розміру.
+  const k = view.w / W;
 
-  // Позиція миші → найближча спроба (точне перетворення екранних координат
-  // у координати viewBox через CTM — працює і з letterbox-масштабуванням).
-  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
+  const clientToSvg = (clientX: number, clientY: number): { x: number; y: number } | null => {
+    const svg = ref.current;
+    if (!svg) return null;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+    return { x: p.x, y: p.y };
+  };
+
+  // Зум колесиком — нативний слухач (React вішає wheel як passive, а нам
+  // треба preventDefault, щоб не скролилась модалка під графіком).
+  useEffect(() => {
+    if (!zoomable) return;
     const svg = ref.current;
     if (!svg) return;
-    const ctm = svg.getScreenCTM();
-    if (!ctm) return;
-    const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const pt = clientToSvg(e.clientX, e.clientY);
+      if (!pt) return;
+      setView((v) => {
+        const f = e.deltaY < 0 ? 1 / 1.25 : 1.25;
+        const nw = clamp(v.w * f, W / MAX_ZOOM, W);
+        if (nw === v.w) return v;
+        const nh = H * (nw / W);
+        return {
+          x: clamp(pt.x - ((pt.x - v.x) * nw) / v.w, 0, W - nw),
+          y: clamp(pt.y - ((pt.y - v.y) * nh) / v.h, 0, H - nh),
+          w: nw,
+          h: nh,
+        };
+      });
+    };
+    svg.addEventListener('wheel', onWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', onWheel);
+  }, [zoomable]);
+
+  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    // Захоплюємо drag у локальну змінну: setView-колбек React може
+    // виконати вже ПІСЛЯ mouseup/mouseleave, коли drag.current == null.
+    const d = drag.current;
+    if (zoomable && d) {
+      const svg = ref.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      // Фактичний масштаб малювання з урахуванням letterbox ("meet").
+      const s = Math.min(rect.width / view.w, rect.height / view.h);
+      const dx = (e.clientX - d.clientX) / s;
+      const dy = (e.clientY - d.clientY) / s;
+      setView((v) => ({
+        ...v,
+        x: clamp(d.viewX - dx, 0, W - v.w),
+        y: clamp(d.viewY - dy, 0, H - v.h),
+      }));
+      return;
+    }
+    const pt = clientToSvg(e.clientX, e.clientY);
+    if (!pt) return;
     let best = 0;
     let bestDist = Infinity;
     for (let i = 0; i < all.length; i++) {
@@ -266,25 +331,38 @@ function GraphSvg({
   return (
     <svg
       ref={ref}
-      viewBox={`0 0 ${W} ${H}`}
-      className={className}
+      viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+      className={className + (zoomable && zoomed ? ' zoomed' : '')}
       role="img"
       aria-label="Графік рівня по спробах"
       onMouseMove={handleMove}
-      onMouseLeave={() => onHover(null)}
+      onMouseLeave={() => {
+        drag.current = null;
+        onHover(null);
+      }}
+      onMouseDown={(e) => {
+        if (zoomable && e.button === 0) {
+          drag.current = { clientX: e.clientX, clientY: e.clientY, viewX: view.x, viewY: view.y };
+        }
+      }}
+      onMouseUp={() => {
+        drag.current = null;
+      }}
+      onDoubleClick={() => zoomable && setView(FULL_VIEW)}
     >
       {gridLevels.map((lv) => (
         <g key={lv}>
-          <line x1={PAD} x2={W - PAD} y1={yFor(lv)} y2={yFor(lv)} className="history-grid-line" />
-          <text x={2} y={yFor(lv) + 4} className="history-grid-label">+{lv}</text>
+          <line x1={PAD} x2={W - PAD} y1={yFor(lv)} y2={yFor(lv)} className="history-grid-line" vectorEffect="non-scaling-stroke" />
+          {/* Підпис осі Y "липне" до лівого краю видимої області */}
+          <text x={view.x + 2 * k} y={yFor(lv) + 4 * k} className="history-grid-label" fontSize={8 * k}>+{lv}</text>
         </g>
       ))}
       {xTicks.map((n) => (
-        <text key={n} x={xFor(n - 1)} y={H - 6} className="history-grid-label" textAnchor="middle">{n}</text>
+        <text key={n} x={xFor(n - 1)} y={view.y + view.h - 6 * k} className="history-grid-label" fontSize={8 * k} textAnchor="middle">{n}</text>
       ))}
 
       {swaps.map((i) => (
-        <line key={'swap' + i} x1={xFor(i)} x2={xFor(i)} y1={PAD - 6} y2={H - PAD} className="history-swap-line">
+        <line key={'swap' + i} x1={xFor(i)} x2={xFor(i)} y1={PAD - 6} y2={H - PAD} className="history-swap-line" vectorEffect="non-scaling-stroke">
           <title>{`Рокіровка на спробі №${i + 1}`}</title>
         </line>
       ))}
@@ -301,6 +379,7 @@ function GraphSvg({
               (hoveredSlot === slot ? ' active' : '')
             }
             fill="none"
+            vectorEffect="non-scaling-stroke"
           />
         ))}
 
@@ -324,8 +403,8 @@ function GraphSvg({
 
       {hovered && (
         <g className="history-hover">
-          <line x1={hovered.x} x2={hovered.x} y1={PAD - 6} y2={H - PAD} className="history-crosshair" />
-          <circle cx={hovered.x} cy={hovered.y} r={5.5} className="history-point-active" />
+          <line x1={hovered.x} x2={hovered.x} y1={view.y} y2={view.y + view.h} className="history-crosshair" vectorEffect="non-scaling-stroke" />
+          <circle cx={hovered.x} cy={hovered.y} r={5.5 * Math.max(0.35, k)} className="history-point-active" vectorEffect="non-scaling-stroke" />
         </g>
       )}
     </svg>

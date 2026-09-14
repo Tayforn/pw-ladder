@@ -714,9 +714,17 @@ tr.row-clickable:hover td { background: rgba(var(--accent-3-rgb), 0.07); }
 .history-crosshair { stroke: var(--text-mute); stroke-width: 1; stroke-dasharray: 2 2; opacity: 0.9; }
 .history-point-active { fill: none; stroke: var(--accent-3); stroke-width: 2; }
 .graph-info {
-  margin-top: 8px; min-height: 30px; padding: 6px 10px; border-radius: 8px;
+  /* Фіксована висота — поява бейджів при ховері не рухає верстку нижче. */
+  margin-top: 8px; min-height: 42px; box-sizing: border-box; padding: 6px 10px; border-radius: 8px;
   background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line);
   font-size: 12.5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.graph-zoom-hint { margin: 0 0 0 14px; }
+.history-graph-svg.zoomed { cursor: grab; }
+.history-graph-svg.zoomed:active { cursor: grabbing; }
+@media (max-width: 640px) {
+  .graph-info { min-height: 60px; }
+  .graph-zoom-hint { display: none; }
 }
 .graph-legend {
   margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 16px;

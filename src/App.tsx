@@ -94,9 +94,16 @@ export default function App() {
   const [viewRun, setViewRun] = useState<(RunReport & { nickname: string }) | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const { settings, entries, reload, reloadSettings } = useLadderData();
+  const { settings, entries, runCounts, reload, reloadSettings, countRun } = useLadderData();
   const game = useLadderGame(settings);
   const myEntry = entries.find((e) => e.nickname === nickname);
+
+  /** Завершити забіг: скинути прогрес і зафіксувати його в лічильнику ранів
+   * (сюди сходяться всі шляхи, де забіг реально обнуляється). */
+  const finishRun = () => {
+    game.reset();
+    countRun(nickname);
+  };
 
   const startGame = (nick: string) => {
     try {
@@ -153,7 +160,7 @@ export default function App() {
       // ліміт спроб) — інакше "Внести в ладдер" був би безкоштовним
       // обходом правила "скидання лише після 150 спроб".
       const runContinues = !auto && !submitted;
-      if (!runContinues) game.reset();
+      if (!runContinues) finishRun();
       const submitMsg = auto
         ? submitted
           ? `Міражі скінчились (${settings.mirageCount}) — результат внесено в ладдер автоматично.`
@@ -170,7 +177,7 @@ export default function App() {
       const limitsChanged = isLimitsRejection(msg);
       const busted = !limitsChanged && isValidationRejection(msg) ? bustedJokeFor(msg) : undefined;
       if (limitsChanged) {
-        if (auto) game.reset();
+        if (auto) finishRun();
         setFinalResult({
           ...base,
           submitMsg: auto
@@ -182,7 +189,7 @@ export default function App() {
         // Ліміт спроб вичерпано — скидаємо прогрес НАВІТЬ якщо внесення в
         // ладдер не вдалося (напр. мережева помилка): застрягти назавжди
         // на 200/200 (кнопки задизейблені) гірше, ніж втратити результат.
-        game.reset();
+        finishRun();
         setFinalResult({
           ...base,
           submitMsg: busted
@@ -246,15 +253,16 @@ export default function App() {
             submitting={submitting}
             myEntry={myEntry}
             onSubmit={() => doSubmit(false)}
+            onResetRun={() => countRun(nickname)}
           />
 
           <h3 id={LADDER_SECTION_ID} style={{ marginTop: 28 }}>Ладдер · Топ 10</h3>
           <p className="hint" style={{ margin: '4px 0 10px' }}>Клікни по учаснику — відкриється його найкращий забіг з титулами й статистикою.</p>
           <div className="card">
-            <LadderTable entries={top10} nickname={nickname} onSelect={openEntry} />
+            <LadderTable entries={top10} nickname={nickname} runCounts={runCounts} onSelect={openEntry} />
           </div>
 
-          <AwardsSection entries={entries} onSelect={openEntry} />
+          <AwardsSection entries={entries} runCounts={runCounts} onSelect={openEntry} />
         </main>
       </div>
       <Footer />
@@ -281,6 +289,7 @@ export default function App() {
           busted={finalResult.busted}
           runContinues={finalResult.runContinues}
           settings={settings}
+          runCount={runCounts[nickname]}
           onTryAgain={() => setFinalResult(null)}
           onViewLeaderboard={() => {
             setFinalResult(null);
@@ -300,6 +309,7 @@ export default function App() {
           submitMsg={null}
           runContinues={false}
           settings={settings}
+          runCount={runCounts[viewRun.nickname]}
           viewOnly
           title={`Найкращий забіг: ${viewRun.nickname}`}
           onTryAgain={() => setViewRun(null)}

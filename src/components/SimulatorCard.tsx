@@ -34,6 +34,7 @@ export default function SimulatorCard({
   submitting,
   myEntry,
   onSubmit,
+  onResetRun,
 }: {
   game: Game;
   settings: LadderSettings;
@@ -41,6 +42,8 @@ export default function SimulatorCard({
   submitting: boolean;
   myEntry: LadderEntry | undefined;
   onSubmit: () => void;
+  /** Ручне скидання прогресу = завершений (покинутий) забіг — рахуємо його. */
+  onResetRun: () => void;
 }) {
   const { levels, mainSlot, attempts, history } = game.state;
   const [active, setActive] = useState<ItemSlot>(mainSlot);
@@ -204,7 +207,10 @@ export default function SimulatorCard({
           className="btn btn-ghost"
           disabled={attempts < resetAt}
           onClick={() => {
-            if (confirm('Скинути прогрес без внесення в ладдер? Поточний результат буде втрачено назавжди.')) game.reset();
+            if (confirm('Скинути прогрес без внесення в ладдер? Поточний результат буде втрачено назавжди.')) {
+              game.reset();
+              onResetRun();
+            }
           }}
         >
           {attempts < resetAt

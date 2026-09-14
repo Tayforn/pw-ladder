@@ -60,6 +60,7 @@ export default function FinalResultScreen({
   busted,
   runContinues,
   settings,
+  runCount,
   viewOnly = false,
   title = 'Результат забігу',
   onTryAgain,
@@ -77,6 +78,8 @@ export default function FinalResultScreen({
   runContinues: boolean;
   /** Ліміти ресурсів — для рядків "використано X із Y". */
   settings: LadderSettings;
+  /** Скільки завершених забігів зіграв цей нік (0013); undefined — нема даних. */
+  runCount?: number;
   /** Режим ПЕРЕГЛЯДУ чужого (чи свого) збереженого забігу з ладдера:
    * без рядків про сабміт/ліміти поточного забігу, з однією кнопкою
    * "Закрити" і без лімітів у розбивці ресурсів (забіг міг бути зіграний
@@ -117,6 +120,7 @@ export default function FinalResultScreen({
             <span className="result-level">+{stats.finalLevel}</span>
             <span className="hint" style={{ margin: 0 }}>
               пік +{stats.peakLevel}{stats.peakAttempt > 0 && <> (спроба №{stats.peakAttempt})</>} · архетип «{profile.archetype}»
+              {runCount !== undefined && runCount > 0 && <> · забігів зіграно: <b>{runCount}</b></>}
             </span>
           </div>
 

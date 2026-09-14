@@ -7,7 +7,9 @@
 // =========================================================
 
 import type { LadderEntry } from '../data/ladder';
-import { failsWord, stonesWord, tripsWord, winsWord } from '../lib/plural';
+import { failsWord, plural, stonesWord, tripsWord, winsWord } from '../lib/plural';
+
+const runsWord = (n: number) => plural(n, 'забіг', 'забіги', 'забігів');
 
 interface Award {
   label: string;
@@ -31,13 +33,24 @@ function fastestPeak(entries: LadderEntry[]): LadderEntry | null {
 
 export default function AwardsSection({
   entries,
+  runCounts,
   onSelect,
 }: {
   entries: LadderEntry[];
+  /** Завершених забігів на нік (0013) — для нагороди "найзавзятіший". */
+  runCounts: Record<string, number>;
   /** Клік по нагороді відкриває забіг її власника (як у таблиці ладдера). */
   onSelect?: (nickname: string) => void;
 }) {
   if (entries.length === 0) return null;
+
+  // Найзавзятіший — найбільше завершених забігів; лише серед тих, хто має
+  // запис у ладдері (щоб клік по нагороді відкривав збережений забіг).
+  let grinder: { entry: LadderEntry; runs: number } | null = null;
+  for (const e of entries) {
+    const runs = runCounts[e.nickname] ?? 0;
+    if (runs >= 2 && (!grinder || runs > grinder.runs)) grinder = { entry: e, runs };
+  }
 
   const luckiest = bestBy(entries, 'luckScore', true);
   const streaker = bestBy(entries, 'bestStreak', true);
@@ -62,6 +75,7 @@ export default function AwardsSection({
     ...(gambler ? [{ label: 'Найагресивніший забіг', entry: gambler, value: `Агресія ${gambler.aggression}/100`, hint: 'Середня ставка на спробу: скільки рівнів згоріло б при провалі. Світобудова — 0, міраж на +6 — 6.' }] : []),
     ...(basement ? [{ label: 'Абонемент у підвал', entry: basement, value: `${basement.timesHitZero} ${tripsWord(basement.timesHitZero)} у +0`, hint: 'Скільки разів предмет злітав у +0 з рівня +1 і вище.' }] : []),
     ...(sponsor ? [{ label: 'Спонсор каменярні', entry: sponsor, value: `${sponsor.paidAttempts} ${stonesWord(sponsor.paidAttempts)} куплено`, hint: 'Кількість спроб платними каменями (усе, крім міража).' }] : []),
+    ...(grinder ? [{ label: 'Найзавзятіший гравець', entry: grinder.entry, value: `${grinder.runs} ${runsWord(grinder.runs)}`, hint: 'Скільки завершених забігів зіграно (включно зі скинутими).' }] : []),
   ];
 
   return (

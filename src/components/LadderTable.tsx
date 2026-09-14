@@ -9,10 +9,13 @@ import type { LadderEntry } from '../data/ladder';
 export default function LadderTable({
   entries,
   nickname,
+  runCounts,
   onSelect,
 }: {
   entries: LadderEntry[];
   nickname: string;
+  /** Завершених забігів на нік (0013) — для тултипа рядка. */
+  runCounts?: Record<string, number>;
   onSelect?: (nickname: string) => void;
 }) {
   if (entries.length === 0) {
@@ -35,7 +38,10 @@ export default function LadderTable({
             <tr
               key={e.nickname}
               className={(e.nickname === nickname ? 'winner ' : '') + (onSelect ? 'row-clickable' : '') || undefined}
-              title={onSelect ? `Переглянути найкращий забіг «${e.nickname}»` : undefined}
+              title={
+                (onSelect ? `Переглянути найкращий забіг «${e.nickname}»` : '') +
+                (runCounts?.[e.nickname] ? ` · забігів зіграно: ${runCounts[e.nickname]}` : '') || undefined
+              }
               onClick={onSelect ? () => onSelect(e.nickname) : undefined}
             >
               <td>{i + 1}</td>

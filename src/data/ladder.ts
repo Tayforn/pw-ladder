@@ -212,6 +212,30 @@ export async function fetchEntryHistory(nickname: string): Promise<AttemptResult
   return ((data as { history?: AttemptResult[] } | null)?.history ?? []);
 }
 
+/** +1 до лічильника завершених забігів ніка (RPC bump_run_count, 0013).
+ * Повертає нове значення або null при помилці/старій БД без RPC. */
+export async function bumpRunCount(nickname: string): Promise<number | null> {
+  const { data, error } = await supabase.rpc('bump_run_count', { nick: nickname });
+  if (error) {
+    console.error('[ladder] bump_run_count', error);
+    return null;
+  }
+  return typeof data === 'number' ? data : null;
+}
+
+/** Кількість завершених забігів по всіх ніках → Map<nick, runs>.
+ * Порожня Map, якщо таблиці ще нема (0013 не прогнано). */
+export async function fetchRunCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.from('ladder_run_counts').select('nickname, runs');
+  if (error) {
+    console.error('[ladder] fetchRunCounts', error);
+    return {};
+  }
+  const out: Record<string, number> = {};
+  for (const r of (data as Array<{ nickname: string; runs: number }>)) out[r.nickname] = r.runs;
+  return out;
+}
+
 export async function resetLadder(): Promise<void> {
   const { error } = await supabase.from('ladder_entries').delete().neq('nickname', '');
   if (error) throw error;

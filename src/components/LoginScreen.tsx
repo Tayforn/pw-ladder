@@ -24,10 +24,16 @@ export default function LoginScreen({ onLogin, offline }: { onLogin: () => void;
 
   return (
     <div className="card calc-card" style={{ textAlign: 'center', padding: '32px 20px' }}>
-      <img
-        src={import.meta.env.BASE_URL + 'assets/thunder-hero.gif'}
-        alt=""
-        style={{ width: 64, height: 'auto', borderRadius: 'var(--radius)', filter: 'drop-shadow(0 4px 12px rgba(216,31,31,0.5))' }}
+      <video
+        src={import.meta.env.BASE_URL + 'assets/thunder.mp4'}
+        poster={import.meta.env.BASE_URL + 'assets/thunder-poster.png'}
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        aria-hidden="true"
+        style={{ width: 'min(260px, 72%)', height: 'auto', display: 'block', margin: '0 auto 8px', borderRadius: 'var(--radius)', filter: 'drop-shadow(0 6px 20px rgba(216,31,31,0.5))' }}
       />
       <h2 style={{ margin: '14px 0 6px' }}>Ладдер страждання</h2>
       <p className="hint" style={{ maxWidth: 440, margin: '0 auto 18px' }}>

@@ -1,0 +1,58 @@
+# Спільна конфігурація статичного SPA/SSG-сайту (Vite dist).
+(spa) {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+	}
+	# Хешовані бандли Vite незмінні — кешуємо назавжди; сторінки — ні.
+	@hashed path /assets/index-*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	@page not path /assets/*
+	header @page Cache-Control "no-cache"
+	# Маршрути застосунку віддають index.html; відсутній файл у /assets
+	# лишається чесним 404 (а не HTML замість бандла).
+	@spa {
+		not path /assets/*
+		not file
+	}
+	rewrite @spa /index.html
+	file_server
+}
+
+thunderpw.fun, www.thunderpw.fun {
+	root * /srv/www/placeholder
+	encode zstd gzip
+	file_server
+}
+
+# Ладдер: /api/* → бекенд, решта — статика.
+ladder.thunderpw.fun {
+	@api path /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:3001
+	}
+	handle {
+		root * /srv/www/ladder/current
+		import spa
+	}
+}
+
+# Гільдія (thunder-info).
+guild.thunderpw.fun {
+	root * /srv/www/guild/current
+	import spa
+}
+
+# PvP-турніри (pw-pvp).
+pvp.thunderpw.fun {
+	root * /srv/www/pvp/current
+	import spa
+}
+
+# Хелпер / калькулятори (pw-calc).
+calc.thunderpw.fun {
+	root * /srv/www/calc/current
+	import spa
+}

@@ -28,26 +28,9 @@ export default function Header({ onShowInfo }: { onShowInfo?: () => void }) {
         </a>
 
         <div className="header-actions">
-          <a
-            href="https://tayforn.github.io/pw.calc/refine"
-            target="_blank"
-            rel="noopener"
-            className="partner-logo"
-            title="PW Хелпер — калькулятори"
-          >
-            <img src={import.meta.env.BASE_URL + 'assets/pwcalc-icon.png'} alt="" />
-            <span className="partner-logo-text">Хелпер</span>
-          </a>
-          <a
-            href="https://tayforn.github.io/pw-pvp/"
-            target="_blank"
-            rel="noopener"
-            className="partner-logo partner-logo-alt"
-            title="PW PvP — турніри сервера"
-          >
-            <img src={import.meta.env.BASE_URL + 'assets/pwpvp-icon.png'} alt="" />
-            <span className="partner-logo-text">PvP</span>
-          </a>
+          <a href="https://calc.thunderpw.fun/" className="btn btn-ghost btn-sm" title="PW Хелпер — калькулятори">Хелпер</a>
+          <a href="https://pvp.thunderpw.fun/" className="btn btn-ghost btn-sm" title="PvP — турніри сервера">PvP</a>
+          <a href="https://guild.thunderpw.fun/" className="btn btn-ghost btn-sm" title="Гільдія">Гільдія</a>
           {onShowInfo && <button type="button" className="btn btn-ghost btn-sm" onClick={onShowInfo}>Правила</button>}
           <button
             type="button"

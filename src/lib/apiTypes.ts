@@ -50,6 +50,41 @@ export interface Me {
   runsCount: number;
 }
 
+/** Рядок публічного ладдера (найкращий забіг гравця). */
+export interface BoardEntry {
+  playerId: string;
+  nickname: string;
+  level: number;
+  /** Забіг, у якому рівень досягнуто вперше — другий критерій рейтингу. */
+  runIndex: number;
+  attempts: number;
+  paidAttempts: number;
+  bestStreak: number;
+  worstStreak: number;
+  biggestDrop: number;
+  biggestComeback: number;
+  successRate: number;
+  peakAttempt: number;
+  luckScore: number;
+  aggression: number;
+  timesHitZero: number;
+  runsCount: number;
+}
+
+/** Рядок таблиці «Талан» — найкращий рівень за перші talanRuns забігів. */
+export interface TalanEntry {
+  playerId: string;
+  nickname: string;
+  level: number;
+  runIndex: number;
+  attempts: number;
+}
+
+export interface LadderView {
+  board: BoardEntry[];
+  talan: TalanEntry[];
+}
+
 export type ChallengeReason = 'random' | 'session' | 'rhythm' | 'record';
 
 /** Перевірка присутності: показати `options` каменів, підсвітити `target`. */

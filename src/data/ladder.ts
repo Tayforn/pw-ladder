@@ -132,6 +132,33 @@ export async function fetchSettings(): Promise<LadderSettings> {
   return settingsFromRow(data as SettingsRow);
 }
 
+/** Запис усіх налаштувань бекенд-ери (ресурси + темп/перевірки/«Талан»)
+ * через Supabase (адмін, RLS is_ladder_admin). Ключі RunSettings → колонки. */
+export async function updateGuardSettings(patch: Partial<import('../lib/apiTypes').RunSettings>): Promise<void> {
+  const cols: Record<string, string> = {
+    mirageCount: 'mirage_count', skyCount: 'sky_count', underCount: 'under_count', worldCount: 'world_count',
+    decoyCount: 'decoy_count', resetUnlockAttempts: 'reset_unlock_attempts', minAttemptMs: 'min_attempt_ms',
+    burstAttempts: 'burst_attempts', challengeEveryAttempts: 'challenge_every_attempts',
+    sessionChallengeMinutes: 'session_challenge_minutes', talanRuns: 'talan_runs',
+  };
+  const row: Record<string, number> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (v !== undefined && cols[k]) row[cols[k]] = v as number;
+  }
+  if (Object.keys(row).length === 0) return;
+  const { error } = await supabase.from('ladder_settings').update(row).eq('id', 1);
+  if (error) throw error;
+}
+
+/** Обнулення нового борду й «Талану» (новий сезон). Забіги гравців у
+ * ladder_runs лишаються як історія. */
+export async function resetBoard(): Promise<void> {
+  const del1 = await supabase.from('ladder_board').delete().neq('player_id', '00000000-0000-0000-0000-000000000000');
+  if (del1.error) throw del1.error;
+  const del2 = await supabase.from('ladder_talan').delete().neq('player_id', '00000000-0000-0000-0000-000000000000');
+  if (del2.error) throw del2.error;
+}
+
 export async function updateSettings(patch: Partial<LadderSettings>): Promise<void> {
   const row: Partial<SettingsRow> = {};
   if (patch.mirageCount !== undefined) row.mirage_count = patch.mirageCount;

@@ -1,0 +1,28 @@
+[Unit]
+Description=Ладдер страждання — бекенд (Node/Fastify)
+Documentation=https://github.com/Tayforn/pw-ladder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ladder
+Group=ladder
+EnvironmentFile=/etc/ladder-api/env
+ExecStart=/usr/bin/node /srv/ladder-api/index.mjs
+Restart=on-failure
+RestartSec=2
+
+# Обмеження прав: сервісу нічого не треба писати на диск (стан у Supabase).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=400M
+
+[Install]
+WantedBy=multi-user.target

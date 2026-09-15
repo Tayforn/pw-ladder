@@ -1,24 +1,31 @@
 // =========================================================
-// Картка симулятора (економіка ресурсів, 0009): основна + до 5 підставних
-// (кількість видає адмінка), активний предмет обирається кліком; кожна
-// спроба споживає 1 міраж, спроба каменем — додатково 1 одиницю каменя.
-// Балів немає — згори лічильники ресурсів, на кнопках каменів — залишок.
-// "ГВЧ прогрітий?" — іронічний індикатор хвоста мінусів підставних: гра
-// ритуал не підсилює, лише чесно показує, що гравець його виконує.
+// Картка симулятора — спільна для тренування (локальний рушій) і заліку
+// (серверний забіг). Дані й дії приходять пропами; правила однакові, тож
+// доступність кнопок рахуємо локально через engineCore (сервер лишається
+// авторитетним). У заліку кнопки блокуються, поки триває запит (busy).
 // =========================================================
 
 import { useState } from 'react';
-import { activeSlots, ladderLevel, remainingFor, resetUnlockAt, useLadderGame } from '../lib/ladderEngine';
+import { activeSlots, ladderLevel, resetUnlockAt } from '../lib/ladderEngine';
+import { remainingFor, transition } from '../lib/engineCore';
 import { MAX_LEVEL, RATES, STONE_LABEL, type StoneMethod } from '../data/refineRates';
 import { LABEL_TEXT, TIER_LABEL } from '../lib/criticalMoments';
-import { isBetterResult, type LadderEntry, type LadderSettings } from '../data/ladder';
-import type { ItemSlot } from '../lib/types';
+import type { RunSettings } from '../lib/apiTypes';
+import type { AttemptResult, ItemSlot } from '../lib/types';
 import { attemptsWord, minusWord } from '../lib/plural';
 import AttemptHistoryList from './AttemptHistoryList';
 
-type Game = ReturnType<typeof useLadderGame>;
+/** Стан, що його рендерить картка (спільна форма локального й серверного). */
+export interface SimState {
+  levels: Record<ItemSlot, number>;
+  mainSlot: ItemSlot;
+  used: Record<StoneMethod, number>;
+  attempts: number;
+  history: AttemptResult[];
+}
 
-/** Від скількох мінусів поспіль на підставній показуємо "ГВЧ прогрітий?". */
+export interface AttemptMeta { clickX?: number; clickY?: number }
+
 const RITUAL_HINT_STREAK = 3;
 
 const STONES: Array<{ method: Exclude<StoneMethod, 'mirage'>; label: string; cls: string; failNote: string }> = [
@@ -27,58 +34,57 @@ const STONES: Array<{ method: Exclude<StoneMethod, 'mirage'>; label: string; cls
   { method: 'world', label: 'Світобудова', cls: 'world', failNote: 'провал → без змін' },
 ];
 
+const clickMeta = (e: React.MouseEvent<HTMLButtonElement>): AttemptMeta => {
+  const r = e.currentTarget.getBoundingClientRect();
+  return r.width && r.height
+    ? { clickX: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), clickY: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)) }
+    : {};
+};
+
 export default function SimulatorCard({
-  game,
+  mode,
+  state,
   settings,
-  nickname,
-  submitting,
-  myEntry,
+  busy = false,
+  submitting = false,
+  tooFast = false,
+  onAttempt,
   onSubmit,
-  onResetRun,
+  onReset,
 }: {
-  game: Game;
-  settings: LadderSettings;
-  nickname: string;
-  submitting: boolean;
-  myEntry: LadderEntry | undefined;
-  onSubmit: () => void;
-  /** Ручне скидання прогресу = завершений (покинутий) забіг — рахуємо його. */
-  onResetRun: () => void;
+  mode: 'ranked' | 'training';
+  state: SimState;
+  settings: RunSettings;
+  busy?: boolean;
+  submitting?: boolean;
+  tooFast?: boolean;
+  onAttempt: (item: ItemSlot, method: StoneMethod, meta?: AttemptMeta) => void;
+  onSubmit?: () => void;
+  onReset: () => void;
 }) {
-  const { levels, mainSlot, attempts, history } = game.state;
+  const { levels, mainSlot, attempts, history } = state;
   const [active, setActive] = useState<ItemSlot>(mainSlot);
-  const slots = activeSlots(game.state, settings);
-  // Активний слот міг зникнути з налаштувань (адмін зменшив к-сть підставних).
+  const slots = activeSlots(state, settings);
   const activeSlot = slots.includes(active) ? active : mainSlot;
   const level = levels[activeSlot];
   const activeRole = activeSlot === mainSlot ? 'main' : 'decoy';
   const nextLevel = level + 1;
   const atMax = level >= MAX_LEVEL;
-  const miragesLeft = remainingFor('mirage', game.state, settings);
+  const miragesLeft = remainingFor('mirage', state, settings);
   const mirageRate = atMax ? null : RATES.mirage[nextLevel];
-  const mirageDisabled = atMax || miragesLeft <= 0 || !mirageRate;
   const lastAttempt = history[history.length - 1];
-  const submitLevel = ladderLevel(game.state);
-  const resetAt = resetUnlockAt(settings);
+  const submitLevel = ladderLevel(state);
+  const resetAt = mode === 'ranked' ? resetUnlockAt(settings) : 0;
 
-  // Хвіст мінусів підставних (за роллю) з кінця історії.
+  const canUse = (item: ItemSlot, method: StoneMethod): boolean =>
+    !busy && transition(state, item, method, settings, () => 1) !== null;
+
   let decoyColdTail = 0;
   for (let i = history.length - 1; i >= 0; i--) {
     const h = history[i];
-    if (h.role !== 'decoy') break;
-    if (h.success) break;
+    if (h.role !== 'decoy' || h.success) break;
     decoyColdTail++;
   }
-
-  const confirmSubmit = () => {
-    const better = !myEntry || isBetterResult(submitLevel, attempts, myEntry);
-    const msg = !myEntry
-      ? `Внести перший результат (+${submitLevel}, ${attempts} спроб) у ладдер? Після внесення лічильники скинуться.`
-      : better
-        ? `Результат (+${submitLevel}, ${attempts} спроб) кращий за твій попередній (+${myEntry.level}, ${myEntry.attempts} спроб) — внести? Лічильники скинуться.`
-        : `Твій наявний результат (+${myEntry.level}, ${myEntry.attempts} спроб) кращий — цей забіг зараховано НЕ буде, прогрес продовжиться. Все одно надіслати?`;
-    if (confirm(msg)) onSubmit();
-  };
 
   const decoyIndex = (slot: ItemSlot) => slots.filter((x) => x !== mainSlot).indexOf(slot) + 1;
   const manyDecoys = slots.length > 2;
@@ -120,7 +126,7 @@ export default function SimulatorCard({
           </span>
           {STONES.map((st) => (
             <span key={st.method} className="sim-level-target">
-              {st.label}: <b>{remainingFor(st.method, game.state, settings)}</b>
+              {st.label}: <b>{remainingFor(st.method, state, settings)}</b>
             </span>
           ))}
           <span className="sim-level-target">Точиш: <b>{activeRole === 'main' ? 'основну' : 'підставну'}</b> (+{level})</span>
@@ -148,37 +154,38 @@ export default function SimulatorCard({
       <button
         type="button"
         className="btn btn-primary btn-lg sim-mirage-btn"
-        disabled={mirageDisabled}
-        onClick={() => game.attempt(activeSlot, 'mirage')}
+        disabled={!canUse(activeSlot, 'mirage')}
+        onClick={(e) => onAttempt(activeSlot, 'mirage', clickMeta(e))}
       >
         ⚒ Заточити {activeRole === 'main' ? 'основну' : 'підставну'} (міраж)
         <span className="sim-mirage-rate">{mirageRate ? (mirageRate * 100).toFixed(2) + '%' : '—'}</span>
       </button>
 
-      {/* Слот банера зарезервований ЗАВЖДИ (фіксована висота) — поява/зникнення
-          підказки не рухає ні кнопку зверху, ні камені знизу. */}
-      <div className={'sim-ritual-banner' + (decoyColdTail >= RITUAL_HINT_STREAK ? ' visible' : '')} aria-live="polite">
-        {decoyColdTail >= RITUAL_HINT_STREAK && (
+      {/* Слот банера зарезервований завжди (фіксована висота) — поява/зникнення
+          підказки не рухає кнопки. Показуємо або темп («занадто швидко»), або ритуал. */}
+      <div className={'sim-ritual-banner' + (tooFast || decoyColdTail >= RITUAL_HINT_STREAK ? ' visible' : '')} aria-live="polite">
+        {tooFast ? (
+          <>⏳ Занадто швидко — на сервері між спробами мінімальна пауза. Тисни трохи повільніше.</>
+        ) : decoyColdTail >= RITUAL_HINT_STREAK ? (
           <>
             🔥 ГВЧ прогрітий? <b>{decoyColdTail}</b> {minusWord(decoyColdTail)} поспіль на підставній.
             Вирішальний тиць — за тобою. <span className="muted">(Шанси, звісно, ті самі.)</span>
           </>
-        )}
+        ) : null}
       </div>
 
       <div className="sim-stones-row">
         <div className="sim-stones">
           {STONES.map((st) => {
-            const left = remainingFor(st.method, game.state, settings);
+            const left = remainingFor(st.method, state, settings);
             const rate = atMax ? null : RATES[st.method][nextLevel];
-            const disabled = atMax || !rate || !game.canUse(activeSlot, st.method);
             return (
               <button
                 key={st.method}
                 type="button"
                 className="stone-btn stone-btn-sm"
-                disabled={disabled}
-                onClick={() => game.attempt(activeSlot, st.method)}
+                disabled={!canUse(activeSlot, st.method)}
+                onClick={(e) => onAttempt(activeSlot, st.method, clickMeta(e))}
                 title="Спроба каменем споживає 1 міраж + 1 такий камінь"
               >
                 <span className={'badge ' + st.cls}>{st.label}</span>
@@ -194,30 +201,29 @@ export default function SimulatorCard({
       {atMax && <div className="banner" style={{ marginTop: 14 }}><b>+{MAX_LEVEL}</b> — максимальний рівень досягнуто!</div>}
 
       <div className="sim-actions">
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={submitting || !nickname || attempts <= 0}
-          onClick={confirmSubmit}
-        >
-          Внести в ладдер (+{submitLevel})
-        </button>
+        {mode === 'ranked' && onSubmit && (
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={submitting || busy || attempts <= 0}
+            onClick={() => { if (confirm(`Внести результат (+${submitLevel}, ${attempts} спроб) у ладдер? Забіг завершиться.`)) onSubmit(); }}
+          >
+            Внести в ладдер (+{submitLevel})
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-ghost"
-          disabled={attempts < resetAt}
+          disabled={busy || attempts < resetAt || attempts <= 0}
           onClick={() => {
-            if (confirm('Скинути прогрес без внесення в ладдер? Поточний результат буде втрачено назавжди.')) {
-              game.reset();
-              onResetRun();
-            }
+            const msg = mode === 'ranked'
+              ? 'Скинути прогрес без внесення в ладдер? Забіг зарахується як зіграний, результат втратиться.'
+              : 'Почати тренування спочатку?';
+            if (confirm(msg)) onReset();
           }}
         >
-          {attempts < resetAt
-            ? (() => {
-                const left = resetAt - attempts;
-                return `↺ до можливості скидання ${left} ${attemptsWord(left)}`;
-              })()
+          {mode === 'ranked' && attempts < resetAt
+            ? (() => { const l = resetAt - attempts; return `↺ до можливості скидання ${l} ${attemptsWord(l)}`; })()
             : '↺ Скинути прогрес'}
         </button>
       </div>

@@ -7,7 +7,7 @@
 
 import type {
   AttemptRequest, AttemptResponse, ChallengeAnswer, ChallengeResponse, FinishView,
-  LadderView, Me, RunView,
+  LadderView, Me, RunSettings, RunView,
 } from '../lib/apiTypes';
 import type { ApiErrorBody, ApiErrorCode } from '../lib/apiTypes';
 import type { AttemptResult } from '../lib/types';
@@ -58,6 +58,7 @@ export const loginUrl = (): string => API_BASE + '/auth/login';
 export const fetchMe = (): Promise<Me> => api<Me>('/me');
 export const logout = (): Promise<void> => post<void>('/auth/logout');
 
+export const fetchSettings = (): Promise<RunSettings> => api<RunSettings>('/settings');
 export const fetchLadder = (): Promise<LadderView> => api<LadderView>('/ladder');
 export const fetchRunHistory = (playerId: string): Promise<AttemptResult[]> =>
   api<{ history: AttemptResult[] }>(`/run-history/${encodeURIComponent(playerId)}`).then((r) => r.history);

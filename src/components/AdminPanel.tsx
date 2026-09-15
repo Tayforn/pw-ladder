@@ -1,14 +1,15 @@
 // =========================================================
-// Адмін-панель: редагування балів (успіх / вартість Небески-Підземки-
-// Світобудови), об'єднання записів ладдера (гравець змінив нік) і
-// обнулення ладдера цілком.
+// Адмін-панель: налаштування забігу (ресурси) і захисту (темп, перевірки
+// присутності, «Талан»). Пишуться в ladder_settings через Supabase (RLS
+// is_ladder_admin) і діють на НАСТУПНІ забіги. Плюс обнулення борду (сезон).
 // =========================================================
 
 import { useEffect, useState } from 'react';
-import { errorMessage, reportError } from '../app/errorMessage';
-import { deleteLadderEntry, mergeLadderEntries, resetLadder, updateSettings, type LadderEntry, type LadderSettings } from '../data/ladder';
+import { reportError } from '../app/errorMessage';
+import { resetBoard, updateGuardSettings } from '../data/ladder';
+import type { RunSettings } from '../lib/apiTypes';
 
-function NumberField({ label, value, onSave }: { label: string; value: number; onSave: (v: number) => void }) {
+function NumberField({ label, value, hint, onSave }: { label: string; value: number; hint?: string; onSave: (v: number) => void }) {
   const [v, setV] = useState(String(value));
   useEffect(() => setV(String(value)), [value]);
   return (
@@ -19,160 +20,62 @@ function NumberField({ label, value, onSave }: { label: string; value: number; o
         min={0}
         value={v}
         onChange={(e) => setV(e.target.value)}
-        onBlur={() => {
-          const n = Number(v);
-          if (!Number.isNaN(n) && n >= 0 && n !== value) onSave(n);
-        }}
+        onBlur={() => { const n = Number(v); if (!Number.isNaN(n) && n >= 0 && n !== value) onSave(n); }}
       />
+      {hint && <span className="hint" style={{ margin: '2px 0 0' }}>{hint}</span>}
     </label>
-  );
-}
-
-function ParticipantsSection({ entries, onChanged }: { entries: LadderEntry[]; onChanged: () => void }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [target, setTarget] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const toggle = (nick: string) =>
-    setSelected((s) => {
-      const next = new Set(s);
-      if (next.has(nick)) next.delete(nick);
-      else next.add(nick);
-      return next;
-    });
-
-  const selList = [...selected];
-
-  const merge = async () => {
-    if (selList.length < 2) return;
-    const finalTarget = target.trim() || selList[0];
-    if (!confirm(`Об'єднати записи «${selList.join('», «')}» в один під ніком «${finalTarget}»? Інші записи буде видалено — незворотно.`)) return;
-    setBusy(true);
-    try {
-      await mergeLadderEntries(selList, finalTarget);
-      setSelected(new Set());
-      setTarget('');
-      onChanged();
-    } catch (e) {
-      alert(errorMessage(e, "Не вдалося об'єднати записи."));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async (nickname: string) => {
-    if (!confirm(`Видалити «${nickname}» з ладдера? Весь його результат/статистика зникнуть — дію не можна скасувати.`)) return;
-    setBusy(true);
-    try {
-      await deleteLadderEntry(nickname);
-      setSelected((s) => {
-        const next = new Set(s);
-        next.delete(nickname);
-        return next;
-      });
-      onChanged();
-    } catch (e) {
-      alert(errorMessage(e, 'Не вдалося видалити учасника.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (entries.length === 0) return null;
-
-  return (
-    <div style={{ marginTop: 24 }}>
-      <h3 style={{ marginBottom: 6 }}>Учасники ладдера</h3>
-      <p className="hint" style={{ marginBottom: 12 }}>
-        Познач 2+ ніки одного гравця (напр. змінив нік у грі), щоб об'єднати в один запис із кращим результатом.
-        «✕» видаляє учасника з ладдера повністю.
-      </p>
-      <div className="card" style={{ padding: 0, maxHeight: 320, overflowY: 'auto' }}>
-        {entries.map((e) => (
-          <div
-            key={e.nickname}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 16px', borderBottom: '1px solid var(--line)' }}
-          >
-            <input
-              type="checkbox"
-              checked={selected.has(e.nickname)}
-              disabled={busy}
-              onChange={() => toggle(e.nickname)}
-              style={{ accentColor: 'var(--accent)', width: 17, height: 17, cursor: 'pointer', flex: '0 0 auto' }}
-            />
-            <span style={{ fontWeight: 600 }}>{e.nickname}</span>
-            <span className="hint" style={{ margin: 0 }}>+{e.level} · {e.attempts} спроб · {e.points} балів</span>
-            <button
-              type="button"
-              className="btn btn-bad btn-sm"
-              disabled={busy}
-              style={{ marginLeft: 'auto', padding: '3px 9px' }}
-              title={`Видалити «${e.nickname}»`}
-              onClick={() => remove(e.nickname)}
-            >
-              ✕
-            </button>
-          </div>
-        ))}
-      </div>
-      {selList.length >= 2 && (
-        <div className="field-row" style={{ marginTop: 12, alignItems: 'flex-end' }}>
-          <label className="field" style={{ flex: '1 1 220px' }}>
-            <span>Залишити під ніком</span>
-            <input type="text" placeholder={selList[0]} value={target} onChange={(ev) => setTarget(ev.target.value)} />
-          </label>
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={merge}>Об'єднати</button>
-        </div>
-      )}
-    </div>
   );
 }
 
 export default function AdminPanel({
   settings,
-  entries,
   onSettingsChanged,
-  onLadderChanged,
+  onBoardChanged,
 }: {
-  settings: LadderSettings;
-  entries: LadderEntry[];
+  settings: RunSettings;
   onSettingsChanged: () => void;
-  onLadderChanged: () => void;
+  onBoardChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
 
-  const save = (patch: Partial<LadderSettings>) => {
+  const save = (patch: Partial<RunSettings>) => {
     setBusy(true);
-    updateSettings(patch).then(onSettingsChanged).catch(reportError).finally(() => setBusy(false));
+    updateGuardSettings(patch).then(onSettingsChanged).catch(reportError).finally(() => setBusy(false));
   };
 
-  const doReset = () => {
-    if (!confirm('Обнулити весь ладдер? Усі записи гравців буде видалено — дію не можна скасувати.')) return;
+  const doResetBoard = () => {
+    if (!confirm('Обнулити ладдер і «Талан» (новий сезон)? Записи гравців зникнуть — історія забігів лишиться. Дію не скасувати.')) return;
     setBusy(true);
-    resetLadder().then(onLadderChanged).catch(reportError).finally(() => setBusy(false));
+    resetBoard().then(onBoardChanged).catch(reportError).finally(() => setBusy(false));
   };
 
   return (
     <div className="card">
       <h3 style={{ marginTop: 0 }}>Ресурси на забіг</h3>
       <p className="hint" style={{ marginTop: 4, marginBottom: 12 }}>
-        Міражі = ліміт спроб (кожна спроба будь-чим споживає 1 міраж; камінь — додатково 1 свою одиницю).
-        Підставні — кількість додаткових слотів предметів (0–5). «Скидання після» — зі скількох спроб
-        гравцю розблоковується «Скинути прогрес» без внесення в ладдер.
+        Міражі = ліміт спроб. Підставні — додаткові слоти предметів (0–5). Зміни діють на наступні забіги.
       </p>
       <div className="field-row admin-field-row">
         <NumberField label="Міражі (спроби)" value={settings.mirageCount} onSave={(v) => save({ mirageCount: Math.max(1, Math.min(10000, Math.round(v))) })} />
-        <NumberField label="Небески" value={settings.skyCount} onSave={(v) => save({ skyCount: v })} />
-        <NumberField label="Підземки" value={settings.underCount} onSave={(v) => save({ underCount: v })} />
-        <NumberField label="Світобудови" value={settings.worldCount} onSave={(v) => save({ worldCount: v })} />
+        <NumberField label="Небески" value={settings.skyCount} onSave={(v) => save({ skyCount: Math.round(v) })} />
+        <NumberField label="Підземки" value={settings.underCount} onSave={(v) => save({ underCount: Math.round(v) })} />
+        <NumberField label="Світобудови" value={settings.worldCount} onSave={(v) => save({ worldCount: Math.round(v) })} />
         <NumberField label="Підставні шмотки" value={settings.decoyCount} onSave={(v) => save({ decoyCount: Math.min(5, Math.round(v)) })} />
-        <NumberField label="Скидання після (спроб)" value={settings.resetUnlockAttempts} onSave={(v) => save({ resetUnlockAttempts: Math.max(0, Math.round(v)) })} />
+        <NumberField label="Скидання після (спроб)" value={settings.resetUnlockAttempts} hint="Тримай більшим за кількість небесок" onSave={(v) => save({ resetUnlockAttempts: Math.max(0, Math.round(v)) })} />
       </div>
-      <button type="button" className="btn btn-bad" disabled={busy} onClick={doReset} style={{ marginTop: 16 }}>
-        Обнулити ладдер
-      </button>
 
-      <ParticipantsSection entries={entries} onChanged={onLadderChanged} />
+      <h3 style={{ marginTop: 20 }}>Захист і рейтинг</h3>
+      <div className="field-row admin-field-row">
+        <NumberField label="Пауза між спробами (мс)" value={settings.minAttemptMs} hint="Темп на сервері; ~150 непомітно рукою" onSave={(v) => save({ minAttemptMs: Math.max(0, Math.min(5000, Math.round(v))) })} />
+        <NumberField label="Запас швидких кліків" value={settings.burstAttempts} onSave={(v) => save({ burstAttempts: Math.max(1, Math.min(50, Math.round(v))) })} />
+        <NumberField label="Перевірка раз на ~N спроб" value={settings.challengeEveryAttempts} hint="0 — вимкнути випадкові" onSave={(v) => save({ challengeEveryAttempts: Math.max(0, Math.round(v)) })} />
+        <NumberField label="Перевірка після N хв гри" value={settings.sessionChallengeMinutes} hint="0 — вимкнути" onSave={(v) => save({ sessionChallengeMinutes: Math.max(0, Math.round(v)) })} />
+        <NumberField label="«Талан»: перших N забігів" value={settings.talanRuns} onSave={(v) => save({ talanRuns: Math.max(1, Math.min(1000, Math.round(v))) })} />
+      </div>
+
+      <button type="button" className="btn btn-bad" disabled={busy} onClick={doResetBoard} style={{ marginTop: 16 }}>
+        Обнулити ладдер (новий сезон)
+      </button>
     </div>
   );
 }

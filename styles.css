@@ -751,3 +751,18 @@ tr.row-clickable:hover td { background: rgba(var(--accent-3-rgb), 0.07); }
   transition: border-color 0.12s, color 0.12s;
 }
 .graph-moment.active { border-color: rgba(var(--accent-3-rgb), 0.6); color: var(--text); }
+
+/* Кнопка-посилання (напр. «вийти» у шапці гравця). */
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent, #d81f1f);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+.mode-switch { flex-wrap: wrap; }
+.challenge-stone { transition: transform 0.08s ease; }
+.challenge-stone:active { transform: translate(-50%, -50%) scale(0.92) !important; }
+.challenge-stone:focus-visible { outline: 2px solid var(--accent, #d81f1f); outline-offset: 2px; }

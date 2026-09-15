@@ -1,6 +1,6 @@
 // =========================================================
-// Адмін-вигляд сторінки (прямий захід на /admin) — винесено з App.tsx:
-// гейт логіну, панель налаштувань/учасників і повна таблиця ладдера.
+// Адмін-вигляд (/admin): вхід (той самий Supabase-логін ladder_admins),
+// панель налаштувань/захисту й поточний ладдер (лише читання).
 // =========================================================
 
 import Header from './Header';
@@ -8,18 +8,18 @@ import Footer from './Footer';
 import AdminGate from './AdminGate';
 import AdminPanel from './AdminPanel';
 import LadderTable from './LadderTable';
-import type { LadderEntry, LadderSettings } from '../data/ladder';
+import type { BoardEntry, RunSettings } from '../lib/apiTypes';
 
 export default function AdminView({
   settings,
-  entries,
-  reloadSettings,
+  board,
   reload,
+  reloadSettings,
 }: {
-  settings: LadderSettings;
-  entries: LadderEntry[];
-  reloadSettings: () => void;
+  settings: RunSettings;
+  board: BoardEntry[];
   reload: () => void;
+  reloadSettings: () => void;
 }) {
   return (
     <>
@@ -31,19 +31,10 @@ export default function AdminView({
             <h2>Адмін-панель</h2>
           </header>
           <AdminGate>
-            {() => (
-              <AdminPanel
-                settings={settings}
-                entries={entries}
-                onSettingsChanged={reloadSettings}
-                onLadderChanged={reload}
-              />
-            )}
+            {() => <AdminPanel settings={settings} onSettingsChanged={reloadSettings} onBoardChanged={reload} />}
           </AdminGate>
           <h3 style={{ marginTop: 28 }}>Ладдер (поточний стан)</h3>
-          <div className="card">
-            <LadderTable entries={entries} nickname="" />
-          </div>
+          <div className="card"><LadderTable board={board} /></div>
         </main>
       </div>
       <Footer />

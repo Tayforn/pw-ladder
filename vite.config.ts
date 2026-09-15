@@ -11,4 +11,14 @@ export default defineConfig(({ command }) => ({
       input: 'index.html',
     },
   },
+  // Розробка: /api йде на локальний бекенд, тож фронт і API — один origin
+  // (cookie сесії працює без CORS, як у проді за Caddy).
+  server: {
+    proxy: {
+      '/api': {
+        target: process.env.VITE_DEV_API || 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
+  },
 }));

@@ -16,7 +16,7 @@ import {
   createSession, deleteSession, findSessionPlayer, newToken, SESSION_COOKIE, STATE_COOKIE, safeEqual, upsertPlayer,
   type PlayerRow,
 } from './sessions';
-import { answerChallenge, cryptoRandom, doAttempt, getActiveRun, resetRun, startRun, submitRun, type Rng } from './runs';
+import { answerChallenge, cryptoRandom, doAttempt, getActiveRun, loadRunSettings, resetRun, startRun, submitRun, type Rng } from './runs';
 import type {
   ApiErrorBody, AttemptRequest, BoardEntry, ChallengeAnswer, LadderView, Me, TalanEntry,
 } from '../../src/lib/apiTypes';
@@ -152,6 +152,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const p = await requirePlayer(req);
     return resetRun(db, p.id, now());
   });
+
+  // ---- Публічні налаштування (числа правил для тренування й підказок) ----
+  app.get('/api/settings', () => loadRunSettings(db));
 
   // ---- Публічний ладдер ----
   app.get('/api/ladder', async (): Promise<LadderView> => {

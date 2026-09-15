@@ -16,7 +16,6 @@ async function main() {
     clientId: config.discordClientId,
     clientSecret: config.discordClientSecret,
     guildId: config.discordGuildId,
-    redirectUri: `${config.publicOrigin}/api/auth/callback`,
   });
 
   const app = buildApp({ config, db, discord });

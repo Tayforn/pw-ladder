@@ -9,6 +9,7 @@ import { SCHEMA_SQL, TEST_SETTINGS } from './schema';
 
 const CONFIG: Config = {
   host: '127.0.0.1', port: 0, publicOrigin: 'http://localhost', cookieSecure: false,
+  allowedOrigins: ['http://localhost'], cookieDomain: null, supabaseUrl: null, supabaseServiceKey: null,
   databaseUrl: '', databaseSsl: 'disable', databaseCaFile: null,
   discordClientId: 'cid', discordClientSecret: 'secret', discordGuildId: 'g1',
   discordAllowedRoleIds: ['R1'], sessionTtlDays: 7,
@@ -154,6 +155,33 @@ describe('ігровий потік через HTTP', () => {
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe('bad_origin');
+    await app.close();
+  });
+
+  it('проксі даних гільдії вимагає Discord-сесії', async () => {
+    const app = await makeApp();
+    const anon = await app.inject({ method: 'GET', url: '/api/sb/rest/v1/players?select=*' });
+    expect(anon.statusCode).toBe(401);
+    expect(anon.json().error).toBe('unauthorized');
+
+    const session = await login(app);
+    // Таблиця поза білим списком не проходить навіть із сесією.
+    const denied = await app.inject({
+      method: 'GET', url: '/api/sb/rest/v1/ladder_sessions?select=*', cookies: { [SESSION_COOKIE]: session },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json().error).toBe('forbidden');
+    await app.close();
+  });
+
+  it('проксі даних гільдії не приймає запис (лише GET)', async () => {
+    const app = await makeApp();
+    const session = await login(app);
+    const res = await app.inject({
+      method: 'POST', url: '/api/sb/rest/v1/players', cookies: { [SESSION_COOKIE]: session },
+      headers: { origin: 'http://localhost' }, payload: { nickname: 'x' },
+    });
+    expect(res.statusCode).toBe(404); // POST-роуту не існує
     await app.close();
   });
 

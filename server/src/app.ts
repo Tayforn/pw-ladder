@@ -32,6 +32,13 @@ export interface AppDeps {
 
 const STATE_TTL_S = 600;
 
+/** Таблиці гільдії, які можна читати через гейтоване проксі. */
+const GUILD_TABLES = new Set([
+  'players', 'player_activity_checks', 'player_bonuses', 'newbies',
+  'activity_checks', 'activities', 'classes', 'point_awards',
+  'gear_items', 'gear_item_components', 'loot_items',
+]);
+
 export function buildApp(deps: AppDeps): FastifyInstance {
   const { config, db, discord } = deps;
   const now = deps.now ?? Date.now;
@@ -40,9 +47,30 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.register(cookie);
 
-  const cookieBase = { httpOnly: true, secure: config.cookieSecure, sameSite: 'lax' as const, path: '/' };
+  // domain='.thunderpw.fun' → одна сесія на всі піддомени (ладдер, guild, pvp).
+  const cookieBase = {
+    httpOnly: true,
+    secure: config.cookieSecure,
+    sameSite: 'lax' as const,
+    path: '/',
+    ...(config.cookieDomain ? { domain: config.cookieDomain } : {}),
+  };
+  const clearOpts = { path: '/', ...(config.cookieDomain ? { domain: config.cookieDomain } : {}) };
   const setSessionCookie = (reply: FastifyReply, token: string) =>
     reply.setCookie(SESSION_COOKIE, token, { ...cookieBase, maxAge: config.sessionTtlDays * 86_400 });
+
+  /** Origin сайту, з якого прийшов запит (ладдер/guild/pvp) — лише зі списку
+   * дозволених; використовується для redirect_uri і повернення після входу. */
+  function siteOrigin(req: FastifyRequest): string {
+    const fromHeader = req.headers.origin;
+    if (fromHeader && config.allowedOrigins.includes(fromHeader)) return fromHeader;
+    const host = req.headers.host;
+    if (host) {
+      const candidate = `${req.protocol}://${host}`;
+      if (config.allowedOrigins.includes(candidate)) return candidate;
+    }
+    return config.publicOrigin;
+  }
 
   /** Гравець за cookie сесії; кидає, якщо не залогінений або забанений. */
   async function requirePlayer(req: FastifyRequest): Promise<PlayerRow> {
@@ -56,9 +84,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
    * уже блокує міжсайтовий POST із cookie — це друга лінія. */
   function assertOrigin(req: FastifyRequest): void {
     const origin = req.headers.origin;
-    if (origin && origin === config.publicOrigin) return;
+    if (origin && config.allowedOrigins.includes(origin)) return;
     const referer = req.headers.referer;
-    if (!origin && referer && referer.startsWith(config.publicOrigin + '/')) return;
+    if (!origin && referer && config.allowedOrigins.some((o) => referer.startsWith(o + '/'))) return;
     throw new ApiError('bad_origin', 'Некоректне джерело запиту.');
   }
 
@@ -82,19 +110,20 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.get('/api/auth/login', async (req, reply) => {
     const state = newToken();
     reply.setCookie(STATE_COOKIE, state, { ...cookieBase, maxAge: STATE_TTL_S });
-    return reply.redirect(discord.authorizeUrl(state));
+    return reply.redirect(discord.authorizeUrl(state, siteOrigin(req) + '/api/auth/callback'));
   });
 
   app.get('/api/auth/callback', async (req, reply) => {
     const { code, state } = req.query as { code?: string; state?: string };
     const cookieState = req.cookies[STATE_COOKIE];
-    reply.clearCookie(STATE_COOKIE, { path: '/' });
-    const home = config.publicOrigin + '/';
+    reply.clearCookie(STATE_COOKIE, clearOpts);
+    const site = siteOrigin(req);
+    const home = site + '/';
     if (!code || !state || !cookieState || !safeEqual(state, cookieState)) {
       return reply.redirect(home + '?login=error');
     }
     try {
-      const token = await discord.exchangeCode(code);
+      const token = await discord.exchangeCode(code, site + '/api/auth/callback');
       const member = await discord.fetchMember(token);
       if (!member || !hasAllowedRole(member, config.discordAllowedRoleIds)) {
         return reply.redirect(home + '?login=denied');
@@ -113,7 +142,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.post('/api/auth/logout', async (req, reply) => {
     assertOrigin(req);
     await deleteSession(db, req.cookies[SESSION_COOKIE]);
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    reply.clearCookie(SESSION_COOKIE, clearOpts);
     return { ok: true };
   });
 
@@ -178,6 +207,38 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const { playerId } = req.params as { playerId: string };
     const { rows } = await db.query<{ history: AttemptResult[] }>('select history from ladder_board where player_id = $1', [playerId]);
     return { history: rows[0]?.history ?? [] };
+  });
+
+  // ---- Гейтоване читання даних гільдії (guild.thunderpw.fun) ----
+  // Проксі до Supabase REST лише для GET і лише з валідною Discord-сесією
+  // (а сесія існує, тільки якщо при вході підтвердились сервер клану + роль).
+  // Ключ service_role лишається на сервері; клієнт своїх прав не має.
+  app.get('/api/sb/rest/v1/:table', async (req, reply) => {
+    await requirePlayer(req);
+    const { table } = req.params as { table: string };
+    if (!GUILD_TABLES.has(table)) throw new ApiError('forbidden', 'Ця таблиця недоступна.');
+    if (!config.supabaseUrl || !config.supabaseServiceKey) {
+      throw new ApiError('internal', 'Проксі Supabase не налаштовано.');
+    }
+
+    const qs = (req.raw.url ?? '').split('?')[1] ?? '';
+    const headers: Record<string, string> = {
+      apikey: config.supabaseServiceKey,
+      Authorization: `Bearer ${config.supabaseServiceKey}`,
+      Accept: String(req.headers.accept ?? 'application/json'),
+    };
+    for (const h of ['prefer', 'range', 'accept-profile'] as const) {
+      const v = req.headers[h];
+      if (v) headers[h] = String(v);
+    }
+    const res = await fetch(`${config.supabaseUrl}/rest/v1/${table}${qs ? '?' + qs : ''}`, { headers });
+    const body = await res.text();
+    reply.status(res.status);
+    for (const h of ['content-type', 'content-range'] as const) {
+      const v = res.headers.get(h);
+      if (v) reply.header(h, v);
+    }
+    return reply.send(body);
   });
 
   return app;

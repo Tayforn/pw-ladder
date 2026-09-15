@@ -10,7 +10,8 @@ const sql = readFileSync(process.argv[2], 'utf8');
 const pool = new pg.Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
 const client = await pool.connect();
 try {
-  await client.query(sql);
+  const res = await client.query(sql);
+  if (res.rows && res.rows.length) console.log(JSON.stringify(res.rows, null, 2));
   console.log('SQL OK');
 } catch (e) {
   console.error('SQL FAIL:', e instanceof Error ? e.message : e);

@@ -17,8 +17,9 @@ export interface DiscordMember {
 }
 
 export interface DiscordClient {
-  authorizeUrl(state: string): string;
-  exchangeCode(code: string): Promise<string>;
+  /** redirectUri залежить від піддомену, з якого почали вхід. */
+  authorizeUrl(state: string, redirectUri: string): string;
+  exchangeCode(code: string, redirectUri: string): Promise<string>;
   /** null — людини немає на сервері клану. */
   fetchMember(accessToken: string): Promise<DiscordMember | null>;
 }
@@ -61,30 +62,30 @@ export function hasAllowedRole(m: DiscordMember, allowedRoleIds: string[]): bool
 }
 
 export function createDiscordClient(
-  cfg: { clientId: string; clientSecret: string; guildId: string; redirectUri: string },
+  cfg: { clientId: string; clientSecret: string; guildId: string },
   fetchImpl: typeof fetch = fetch,
 ): DiscordClient {
   return {
-    authorizeUrl(state) {
+    authorizeUrl(state, redirectUri) {
       const params = new URLSearchParams({
         response_type: 'code',
         client_id: cfg.clientId,
         scope: 'identify guilds.members.read',
-        redirect_uri: cfg.redirectUri,
+        redirect_uri: redirectUri,
         state,
         prompt: 'none',
       });
       return `https://discord.com/oauth2/authorize?${params}`;
     },
 
-    async exchangeCode(code) {
+    async exchangeCode(code, redirectUri) {
       const res = await fetchImpl(`${API}/oauth2/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           grant_type: 'authorization_code',
           code,
-          redirect_uri: cfg.redirectUri,
+          redirect_uri: redirectUri,
           client_id: cfg.clientId,
           client_secret: cfg.clientSecret,
         }),

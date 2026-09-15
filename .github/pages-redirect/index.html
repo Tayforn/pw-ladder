@@ -2,24 +2,18 @@
 <html lang="uk">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ладдер страждання переїхав</title>
 <meta name="robots" content="noindex">
+<title>thunderpw</title>
 <link rel="canonical" href="https://ladder.thunderpw.fun/">
 <script>
-  // Стара адреса на GitHub Pages: переносимо шлях (/admin), query і hash.
+  // Нічого не показуємо — миттєво ведемо на новий домен зі збереженням
+  // шляху (/admin), query і hash. Стара адреса лишається задеплоєна, але
+  // порожня.
   var path = location.pathname.replace(/^\/pw-ladder/, '') || '/';
   location.replace('https://ladder.thunderpw.fun' + path + location.search + location.hash);
 </script>
 <meta http-equiv="refresh" content="0; url=https://ladder.thunderpw.fun/">
-<style>
-  :root { color-scheme: dark; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-         background: #111; color: #ddd; font: 16px/1.5 system-ui, sans-serif; padding-inline: 16px; }
-  a { color: #8ab4ff; }
-</style>
+<style>html,body{margin:0;height:100%;background:#111}</style>
 </head>
-<body>
-  <p>Ладдер переїхав на <a href="https://ladder.thunderpw.fun/">ladder.thunderpw.fun</a></p>
-</body>
+<body></body>
 </html>

@@ -56,34 +56,3 @@ jobs:
           test "$expected" = "$live"
           curl -fsS -o /dev/null "$SITE_URL$expected"
           curl -fsS -o /dev/null "$SITE_URL/admin"
-
-  # Стара адреса tayforn.github.io/pw-ladder/ лише перенаправляє на новий домен.
-  # Публікується тільки після успішного деплою на сервер.
-  pages-build:
-    name: Build GitHub Pages redirect
-    needs: server
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: |
-          mkdir -p _redirect
-          cp .github/pages-redirect/index.html _redirect/index.html
-          cp .github/pages-redirect/index.html _redirect/404.html
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _redirect
-
-  pages-deploy:
-    name: Publish GitHub Pages redirect
-    needs: pages-build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4

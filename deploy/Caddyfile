@@ -41,14 +41,26 @@ ladder.thunderpw.fun {
 
 # Гільдія (thunder-info).
 guild.thunderpw.fun {
-	root * /srv/www/guild/current
-	import spa
+	@api path /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:3001
+	}
+	handle {
+		root * /srv/www/guild/current
+		import spa
+	}
 }
 
 # PvP-турніри (pw-pvp).
 pvp.thunderpw.fun {
-	root * /srv/www/pvp/current
-	import spa
+	@api path /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:3001
+	}
+	handle {
+		root * /srv/www/pvp/current
+		import spa
+	}
 }
 
 # Хелпер / калькулятори (pw-calc).

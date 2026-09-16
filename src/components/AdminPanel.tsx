@@ -1,6 +1,6 @@
 // =========================================================
 // Адмін-панель: налаштування забігу (ресурси) і захисту (темп, перевірки
-// присутності, «Талан»). Пишуться в ladder_settings через Supabase (RLS
+// присутності). Пишуться в ladder_settings через Supabase (RLS
 // is_ladder_admin) і діють на НАСТУПНІ забіги. Плюс обнулення борду (сезон).
 // =========================================================
 
@@ -44,7 +44,7 @@ export default function AdminPanel({
   };
 
   const doResetBoard = () => {
-    if (!confirm('Обнулити ладдер і «Талан» (новий сезон)? Записи гравців зникнуть — історія забігів лишиться. Дію не скасувати.')) return;
+    if (!confirm('Обнулити ладдер (новий сезон)? Записи гравців зникнуть — історія забігів лишиться. Дію не скасувати.')) return;
     setBusy(true);
     resetBoard().then(onBoardChanged).catch(reportError).finally(() => setBusy(false));
   };
@@ -70,7 +70,6 @@ export default function AdminPanel({
         <NumberField label="Запас швидких кліків" value={settings.burstAttempts} onSave={(v) => save({ burstAttempts: Math.max(1, Math.min(50, Math.round(v))) })} />
         <NumberField label="Перевірка раз на ~N спроб" value={settings.challengeEveryAttempts} hint="0 — вимкнути випадкові" onSave={(v) => save({ challengeEveryAttempts: Math.max(0, Math.round(v)) })} />
         <NumberField label="Перевірка після N хв гри" value={settings.sessionChallengeMinutes} hint="0 — вимкнути" onSave={(v) => save({ sessionChallengeMinutes: Math.max(0, Math.round(v)) })} />
-        <NumberField label="«Талан»: перших N забігів" value={settings.talanRuns} onSave={(v) => save({ talanRuns: Math.max(1, Math.min(1000, Math.round(v))) })} />
       </div>
 
       <button type="button" className="btn btn-bad" disabled={busy} onClick={doResetBoard} style={{ marginTop: 16 }}>

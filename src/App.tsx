@@ -1,7 +1,7 @@
 // =========================================================
 // Оркестратор сторінки. Грати можна лише після входу через Discord. Два
 // режими: «Залік» (серверний забіг → ладдер) і «Тренування» (локальний
-// рушій, без заліку). Дані ладдера/«Талану»/налаштувань — з бекенда.
+// рушій, без заліку). Дані ладдера й налаштувань — з бекенда.
 // =========================================================
 
 import { useEffect, useState } from 'react';
@@ -9,7 +9,6 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import InfoPopup from './components/InfoPopup';
 import LadderTable from './components/LadderTable';
-import TalanTable from './components/TalanTable';
 import PrizeTable from './components/PrizeTable';
 import AwardsSection from './components/AwardsSection';
 import AdminView from './components/AdminView';
@@ -53,7 +52,7 @@ function isAdminPath(): boolean {
 function finishMessage(f: FinishView): string {
   if (f.status === 'reset') return 'Забіг скинуто — він зарахований як зіграний. Можна починати новий.';
   const out = f.status === 'finished' ? `Міражі скінчились (${f.settings.mirageCount}). ` : '';
-  if (f.boardUpdated) return out + (f.talanUpdated ? 'Новий рекорд ладдера й «Талану»!' : 'Новий рекорд ладдера!');
+  if (f.boardUpdated) return out + 'Новий рекорд ладдера!';
   return out + 'Забіг завершено. Твій попередній результат у ладдері кращий.';
 }
 
@@ -87,8 +86,7 @@ export default function App() {
     try {
       const raw = await fetchRunHistory(playerId);
       if (raw.length === 0) { alert('Історія цього забігу не збереглась.'); return; }
-      const nick = ladder.board.find((b) => b.playerId === playerId)?.nickname
-        ?? ladder.talan.find((t) => t.playerId === playerId)?.nickname ?? '—';
+      const nick = ladder.board.find((b) => b.playerId === playerId)?.nickname ?? '—';
       setViewRun({ nickname: nick, ...deriveRun(raw) });
     } catch (e) {
       reportError(e);
@@ -108,7 +106,6 @@ export default function App() {
   }
 
   const top = ladder.board.slice(0, TOP_N);
-  const talanTop = ladder.talan.slice(0, TOP_N);
   const finish = server.finish;
 
   return (
@@ -182,10 +179,6 @@ export default function App() {
               <h3 id={LADDER_SECTION_ID} style={{ marginTop: 28 }}>Ладдер · Топ 10</h3>
               <p className="hint" style={{ margin: '4px 0 10px' }}>Клікни по учаснику — відкриється його найкращий забіг з титулами й статистикою.</p>
               <div className="card"><LadderTable board={top} meNickname={me.me.nickname} onSelect={openEntry} /></div>
-
-              <h3 style={{ marginTop: 28 }}>«Талан» · Топ 10</h3>
-              <p className="hint" style={{ margin: '4px 0 10px' }}>Найкращий рівень за перші {ladder.settings.talanRuns} забігів — тут об'єм не допомагає.</p>
-              <div className="card"><TalanTable talan={talanTop} meNickname={me.me.nickname} onSelect={openEntry} /></div>
 
               <AwardsSection board={ladder.board} onSelect={openEntry} />
             </>

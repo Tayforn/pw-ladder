@@ -1,5 +1,5 @@
 // =========================================================
-// Дані ладдера з бекенда: борд + «Талан» (/api/ladder) і числа правил
+// Дані ладдера з бекенда: борд (/api/ladder) і числа правил
 // (/api/settings). Оновлюємо на монтуванні, при поверненні фокусу на
 // вкладку, раз на 30 с і вручну (reload) — напр. після власного фінішу.
 // =========================================================
@@ -12,13 +12,12 @@ const REFRESH_MS = 30_000;
 
 export function useLadderData() {
   const [board, setBoard] = useState<BoardEntry[]>([]);
-  const [talan, setTalan] = useState<TalanEntry[]>([]);
   const [settings, setSettings] = useState<RunSettings>(DEFAULT_RUN_SETTINGS);
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(() => {
     fetchLadder()
-      .then((v) => { setBoard(v.board); setTalan(v.talan); })
+      .then((v) => setBoard(v.board))
       .catch((e) => console.error('[ladder] не вдалося оновити ладдер', e))
       .finally(() => setLoading(false));
   }, []);
@@ -39,5 +38,5 @@ export function useLadderData() {
     };
   }, [reload, reloadSettings]);
 
-  return { board, talan, settings, loading, reload, reloadSettings };
+  return { board, settings, loading, reload, reloadSettings };
 }

@@ -132,7 +132,7 @@ export async function fetchSettings(): Promise<LadderSettings> {
   return settingsFromRow(data as SettingsRow);
 }
 
-/** Запис усіх налаштувань бекенд-ери (ресурси + темп/перевірки/«Талан»)
+/** Запис усіх налаштувань бекенд-ери (ресурси + темп/перевірки)
  * через Supabase (адмін, RLS is_ladder_admin). Ключі RunSettings → колонки. */
 export async function updateGuardSettings(patch: Partial<import('../lib/apiTypes').RunSettings>): Promise<void> {
   const cols: Record<string, string> = {
@@ -150,7 +150,8 @@ export async function updateGuardSettings(patch: Partial<import('../lib/apiTypes
   if (error) throw error;
 }
 
-/** Обнулення нового борду й «Талану» (новий сезон). Забіги гравців у
+/** Обнулення борду (новий сезон). Таблицю «Талан» на сайті прибрано, але
+ * бекенд її ще веде — чистимо разом, щоб дані не розходились. Забіги гравців у
  * ladder_runs лишаються як історія. */
 export async function resetBoard(): Promise<void> {
   const del1 = await supabase.from('ladder_board').delete().neq('player_id', '00000000-0000-0000-0000-000000000000');

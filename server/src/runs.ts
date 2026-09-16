@@ -153,16 +153,20 @@ export async function startRun(db: Db, playerId: string, now: number, rng: Rng =
     const existing = await loadActiveRow(q, playerId, true);
     if (existing) return { ...toRunState(existing), history: await loadRawHistory(q, existing.id) };
 
+    // Сезон читаємо FOR SHARE: ladder_new_season() (0018) бере цей рядок на
+    // запис, тож новий забіг або закриється разом із сезоном, або стартує вже в новому.
+    const { rows: seasonRows } = await q.query<{ season: number }>('select season from ladder_settings where id = 1 for share');
+    const season = seasonRows[0]?.season ?? 1;
     const settings = await loadRunSettings(q);
     const nextRandom = scheduleRandomCheck(0, settings.challengeEveryAttempts, rng);
     const { rows } = await q.query<RunRow>(
       `insert into ladder_runs
-         (player_id, run_index, settings, bucket_tokens, bucket_at, next_random_check)
-       values ($1,
-               (select coalesce(max(run_index), 0) + 1 from ladder_runs where player_id = $1),
+         (player_id, season, run_index, settings, bucket_tokens, bucket_at, next_random_check)
+       values ($1, $6,
+               (select coalesce(max(run_index), 0) + 1 from ladder_runs where player_id = $1 and season = $6),
                $2::jsonb, $3, to_timestamp($4 / 1000.0), $5)
        returning ${RUN_COLUMNS}`,
-      [playerId, JSON.stringify(settings), settings.burstAttempts, now, nextRandom],
+      [playerId, JSON.stringify(settings), settings.burstAttempts, now, nextRandom, season],
     );
     return { ...toRunState(normalizeRow(rows[0])), history: [] };
   });

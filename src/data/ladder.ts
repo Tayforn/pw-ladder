@@ -153,11 +153,13 @@ export async function updateGuardSettings(patch: Partial<import('../lib/apiTypes
 /** Обнулення борду (новий сезон). Таблицю «Талан» на сайті прибрано, але
  * бекенд її ще веде — чистимо разом, щоб дані не розходились. Забіги гравців у
  * ladder_runs лишаються як історія. */
-export async function resetBoard(): Promise<void> {
-  const del1 = await supabase.from('ladder_board').delete().neq('player_id', '00000000-0000-0000-0000-000000000000');
-  if (del1.error) throw del1.error;
-  const del2 = await supabase.from('ladder_talan').delete().neq('player_id', '00000000-0000-0000-0000-000000000000');
-  if (del2.error) throw del2.error;
+/** Новий сезон (RPC з міграції 0018): чистить ладдер, закриває активні забіги
+ * всіх гравців без запису, обнуляє лічильники й нумерацію забігів. Історія
+ * забігів лишається в базі. Повертає номер нового сезону. */
+export async function resetBoard(): Promise<number> {
+  const { data, error } = await supabase.rpc('ladder_new_season');
+  if (error) throw error;
+  return data as number;
 }
 
 export async function updateSettings(patch: Partial<LadderSettings>): Promise<void> {

@@ -1,6 +1,6 @@
 // Схема для тестів на PGlite: ті самі таблиці, що й міграція 0014, але без
 // RLS/політик/publication (бекенд працює власником БД і минає RLS, тож для
-// логіки забігів вони не потрібні). Тримати колонки в синху з 0014.
+// логіки забігів вони не потрібні). Тримати колонки в синху з 0014 і 0018 (сезони).
 
 export const SCHEMA_SQL = `
 create table ladder_settings (
@@ -15,7 +15,8 @@ create table ladder_settings (
   burst_attempts int not null default 5,
   challenge_every_attempts int not null default 300,
   session_challenge_minutes int not null default 60,
-  talan_runs int not null default 10
+  talan_runs int not null default 10,
+  season int not null default 1
 );
 
 create table ladder_players (
@@ -39,6 +40,7 @@ create table ladder_sessions (
 create table ladder_runs (
   id uuid primary key default gen_random_uuid(),
   player_id uuid not null references ladder_players (id) on delete cascade,
+  season int not null default 1,
   run_index int not null,
   status text not null default 'active',
   settings jsonb not null,
@@ -61,7 +63,7 @@ create table ladder_runs (
   suspicion int,
   started_at timestamptz not null default now(),
   ended_at timestamptz,
-  unique (player_id, run_index)
+  unique (player_id, season, run_index)
 );
 create unique index ladder_runs_one_active on ladder_runs (player_id) where status = 'active';
 

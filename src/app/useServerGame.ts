@@ -38,7 +38,9 @@ const EMPTY: ServerGameState = {
 
 const coreOf = (run: RunView): EngineCore => ({ levels: run.levels, mainSlot: run.mainSlot, used: run.used, attempts: run.attempts });
 
-export function useServerGame(onFinished?: (f: FinishView) => void) {
+/** onRunLost — сервер каже, що активного забігу вже немає (напр. адмін почав
+ * новий сезон): варто перечитати профіль, бо лічильник забігів міг змінитись. */
+export function useServerGame(onFinished?: (f: FinishView) => void, onRunLost?: () => void) {
   const [run, setRun] = useState<RunView | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -48,6 +50,12 @@ export function useServerGame(onFinished?: (f: FinishView) => void) {
   const lastTapMs = useRef<number | null>(null);
   const finishedCb = useRef(onFinished);
   finishedCb.current = onFinished;
+  const lostCb = useRef(onRunLost);
+  lostCb.current = onRunLost;
+  const runLost = useCallback(() => {
+    setRun(null);
+    lostCb.current?.();
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -98,13 +106,13 @@ export function useServerGame(onFinished?: (f: FinishView) => void) {
         else if (e.code === 'challenge_required' && e.body?.challenge) {
           const ch = e.body.challenge;
           setRun((prev) => (prev ? { ...prev, challenge: ch } : prev));
-        } else if (e.code === 'no_active_run') setRun(null);
+        } else if (e.code === 'no_active_run') runLost();
         else setError(e.message);
       } else setError('Помилка мережі.');
     } finally {
       setBusy(false);
     }
-  }, [busy, challenge, run, applyFinish]);
+  }, [busy, challenge, run, applyFinish, runLost]);
 
   const solveChallenge = useCallback(async (choice: number) => {
     if (busy || !challenge) return;
@@ -113,12 +121,12 @@ export function useServerGame(onFinished?: (f: FinishView) => void) {
       const res = await apiAnswer({ id: challenge.id, choice });
       setRun((prev) => (prev && res.run ? { ...res.run, history: prev.history } : prev));
     } catch (e) {
-      if (e instanceof ApiClientError && e.code === 'no_active_run') setRun(null);
+      if (e instanceof ApiClientError && e.code === 'no_active_run') runLost();
       else setError(e instanceof Error ? e.message : 'Помилка перевірки.');
     } finally {
       setBusy(false);
     }
-  }, [busy, challenge]);
+  }, [busy, challenge, runLost]);
 
   const submit = useCallback(async () => {
     if (busy || !run) return;
@@ -126,11 +134,12 @@ export function useServerGame(onFinished?: (f: FinishView) => void) {
     try {
       applyFinish(await apiSubmit());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не вдалося внести результат.');
+      if (e instanceof ApiClientError && e.code === 'no_active_run') runLost();
+      else setError(e instanceof Error ? e.message : 'Не вдалося внести результат.');
     } finally {
       setBusy(false);
     }
-  }, [busy, run, applyFinish]);
+  }, [busy, run, applyFinish, runLost]);
 
   const reset = useCallback(async (): Promise<boolean> => {
     if (busy || !run) return false;
@@ -139,13 +148,14 @@ export function useServerGame(onFinished?: (f: FinishView) => void) {
       applyFinish(await apiReset());
       return true;
     } catch (e) {
-      if (e instanceof ApiClientError && e.code === 'reset_locked') setError(e.message);
+      if (e instanceof ApiClientError && e.code === 'no_active_run') runLost();
+      else if (e instanceof ApiClientError && e.code === 'reset_locked') setError(e.message);
       else setError(e instanceof Error ? e.message : 'Не вдалося скинути.');
       return false;
     } finally {
       setBusy(false);
     }
-  }, [busy, run, applyFinish]);
+  }, [busy, run, applyFinish, runLost]);
 
   const canUse = useCallback(
     (item: ItemSlot, method: StoneMethod): boolean => {

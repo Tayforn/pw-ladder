@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createPgliteDb } from '../src/pglite';
 import type { Db } from '../src/db';
@@ -239,5 +240,60 @@ describe('перевірка присутності', () => {
     expect(good.passed).toBe(true);
     expect(good.run?.challenge).toBeNull();
     await tap(t + 1000); // тепер спроба проходить
+  });
+});
+
+describe('новий сезон (міграція 0018)', () => {
+  /** Свіжа БД зі справжнім SQL міграції; is_ladder_admin — заглушка, grant/revoke
+   * прибрано (у PGlite немає ролей Supabase). */
+  async function applySeasonMigration(isAdmin = true) {
+    const sql = readFileSync(new URL('../../supabase/migrations/0018_seasons.sql', import.meta.url), 'utf8')
+      .split(/\r?\n/)
+      .filter((l) => !/^\s*(grant|revoke)\b/i.test(l))
+      .join('\n');
+    await db.close();
+    db = await createPgliteDb(
+      `${SCHEMA_SQL};\ncreate function is_ladder_admin() returns boolean language sql as 'select ${isAdmin}';\n${sql}`,
+    );
+    await setSettings();
+    const { rows } = await db.query<{ id: string }>(
+      "insert into ladder_players (discord_id, nickname) values ('d1', 'Tester') returning id",
+    );
+    playerId = rows[0].id;
+  }
+
+  it('закриває активний забіг без запису в ладдер, обнуляє лічильник і нумерацію', async () => {
+    await applySeasonMigration();
+    // Сезон 1: завершений забіг у ладдері + ще один активний.
+    await startRun(db, playerId, 1000, rng);
+    roll = 0;
+    await tap(2000);
+    await submitRun(db, playerId, 3000);
+    const active = await startRun(db, playerId, 4000, rng);
+    expect(active.runIndex).toBe(2);
+    await tap(5000);
+
+    const { rows } = await db.query<{ s: number }>('select ladder_new_season() as s');
+    expect(rows[0].s).toBe(2);
+
+    await expectApi('no_active_run', () => tap(6000));
+    expect(await getActiveRun(db, playerId)).toBeNull();
+    const closed = await db.query<{ status: string }>('select status from ladder_runs where id = $1', [active.id]);
+    expect(closed.rows[0].status).toBe('closed');
+    const board = await db.query('select 1 from ladder_board');
+    expect(board.rows).toHaveLength(0);
+    const p = await db.query<{ runs_count: number }>('select runs_count from ladder_players where id = $1', [playerId]);
+    expect(p.rows[0].runs_count).toBe(0);
+
+    // Сезон 2: нумерація з 1, історія сезону 1 лишилась.
+    const fresh = await startRun(db, playerId, 7000, rng);
+    expect(fresh.runIndex).toBe(1);
+    const all = await db.query<{ season: number }>('select season from ladder_runs where player_id = $1 order by started_at', [playerId]);
+    expect(all.rows.map((r) => r.season)).toEqual([1, 1, 2]);
+  });
+
+  it('відмовляє не-адміну', async () => {
+    await applySeasonMigration(false);
+    await expect(db.query('select ladder_new_season()')).rejects.toThrow(/адмін/);
   });
 });

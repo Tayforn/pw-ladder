@@ -67,10 +67,16 @@ export default function App() {
   const [viewRun, setViewRun] = useState<(RunReport & { nickname: string }) | null>(null);
 
   const training = useLadderGame(ladder.settings);
-  const server = useServerGame((f: FinishView) => {
-    ladder.reload();
-    me.patch({ runsCount: f.runsCount });
-  });
+  const server = useServerGame(
+    (f: FinishView) => {
+      ladder.reload();
+      me.patch({ runsCount: f.runsCount });
+    },
+    () => {
+      ladder.reload();
+      me.refresh();
+    },
+  );
 
   const recordLevel = ladder.board.length > 0 ? ladder.board[0].level : 0;
   const deriveRun = (history: AttemptResult[]): RunReport => {

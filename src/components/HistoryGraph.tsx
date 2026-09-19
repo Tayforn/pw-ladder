@@ -339,7 +339,12 @@ function GraphSvg({
         onHover(null);
       }}
       onMouseDown={(e) => {
-        if (zoomable && e.button === 0) drag.current = { clientX: e.clientX, start };
+        if (zoomable && e.button === 0) {
+          // Інакше браузер сприймає перетягування як виділення тексту під графіком.
+          e.preventDefault();
+          window.getSelection()?.removeAllRanges();
+          drag.current = { clientX: e.clientX, start };
+        }
       }}
       onMouseUp={() => {
         drag.current = null;

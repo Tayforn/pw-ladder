@@ -706,7 +706,7 @@ tr.row-clickable:hover td { background: rgba(var(--accent-3-rgb), 0.07); }
 
 /* ── Інтерактивний графік забігу ─────────────────────────── */
 .graph-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; }
-.history-graph-svg { cursor: crosshair; }
+.history-graph-svg { cursor: crosshair; user-select: none; -webkit-user-select: none; }
 .history-graph-svg-full { height: min(62vh, 560px); }
 .modal-graph { width: min(96vw, 1400px); }
 .modal-graph .modal-head { display: flex; align-items: center; }

@@ -19,7 +19,8 @@ import type { PlayerRow } from './sessions';
 
 /** Класи сервера гільдії (ключі ляльки); 11–14 з Хелпера на сервері немає. */
 export const PVP_CLASSES = ['by', 'ga', 'ya', 'rl', 'ij', 'js', 'fx', 'sj', 'ej', 'rg'] as const;
-export const MAX_CHARACTERS = 8;
+/** 16 — вистачає і на еталони класів (10) поруч зі своїми персонажами. */
+export const MAX_CHARACTERS = 16;
 /** Межа сирого JSON документа. Редактор тримає ≤ 32 КБ у форматі jsonb —
  * тут запас на різницю форматів; колонка має CHECK 48 КБ. */
 export const MAX_DOC_BYTES = 40 * 1024;

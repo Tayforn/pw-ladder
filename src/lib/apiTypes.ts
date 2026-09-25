@@ -168,6 +168,7 @@ export type ApiErrorCode =
   | 'bad_request'
   | 'bad_origin'
   | 'rate_limited'
+  | 'conflict'
   | 'internal';
 
 export interface ApiErrorBody {

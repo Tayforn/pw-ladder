@@ -16,6 +16,7 @@ import {
   createSession, deleteSession, findSessionPlayer, newToken, SESSION_COOKIE, STATE_COOKIE, safeEqual, upsertPlayer,
   type PlayerRow,
 } from './sessions';
+import { registerPvpRoutes } from './pvp';
 import { answerChallenge, cryptoRandom, doAttempt, getActiveRun, loadRunSettings, resetRun, startRun, submitRun, type Rng } from './runs';
 import type {
   ApiErrorBody, AttemptRequest, BoardEntry, ChallengeAnswer, LadderView, Me, TalanEntry,
@@ -208,6 +209,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const { rows } = await db.query<{ history: AttemptResult[] }>('select history from ladder_board where player_id = $1', [playerId]);
     return { history: rows[0]?.history ?? [] };
   });
+
+  // ---- Персонажі pvp.thunderpw.fun (лялька) ----
+  registerPvpRoutes(app, { db, now, requirePlayer, assertOrigin });
 
   // ---- Гейтоване читання даних гільдії (guild.thunderpw.fun) ----
   // Проксі до Supabase REST лише для GET і лише з валідною Discord-сесією

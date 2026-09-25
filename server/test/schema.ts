@@ -1,6 +1,6 @@
 // Схема для тестів на PGlite: ті самі таблиці, що й міграція 0014, але без
 // RLS/політик/publication (бекенд працює власником БД і минає RLS, тож для
-// логіки забігів вони не потрібні). Тримати колонки в синху з 0014 і 0018 (сезони).
+// логіки забігів вони не потрібні). Тримати колонки в синху з 0014, 0018 (сезони) і 0019 (персонажі pvp).
 
 export const SCHEMA_SQL = `
 create table ladder_settings (
@@ -115,6 +115,21 @@ create table ladder_talan (
   run_id uuid references ladder_runs (id) on delete set null,
   achieved_at timestamptz not null default now()
 );
+
+-- 0019: персонажі pvp (без RLS — як і решта тестової схеми)
+create table pvp_characters (
+  id uuid primary key default gen_random_uuid(),
+  player_id uuid not null references ladder_players (id) on delete cascade,
+  name text not null check (char_length(name) between 1 and 32),
+  cls text not null check (cls in ('by', 'ga', 'ya', 'rl', 'ij', 'js', 'fx', 'sj', 'ej', 'rg')),
+  level int not null check (level between 1 and 105),
+  doc jsonb not null check (octet_length(doc::text) < 49152),
+  revision int not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  archived_at timestamptz
+);
+create unique index pvp_characters_player_name on pvp_characters (player_id, lower(name)) where archived_at is null;
 `;
 
 export const TEST_SETTINGS = {

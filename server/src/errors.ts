@@ -17,6 +17,7 @@ const STATUS: Record<ApiErrorCode, number> = {
   bad_request: 400,
   bad_origin: 403,
   rate_limited: 429,
+  conflict: 409,
   internal: 500,
 };
 

@@ -15,7 +15,7 @@ import type { DiscordClient, DiscordMember } from '../src/discord';
 import { SESSION_COOKIE, STATE_COOKIE } from '../src/sessions';
 import { createPgliteDb } from '../src/pglite';
 import type { Db } from '../src/db';
-import { PvpDbError, SCORER_ID, createPvpSupabaseStore, parseRegistrationBody, type PvpRules, type PvpStore, type PvpTournament, registrationSig } from '../src/pvpRegister';
+import { PvpDbError, SCORER_ID, createPvpSupabaseStore, parseRegistrationBody, type PvpRules, type PvpStore, type PvpTournament, registrationSig, playerTag } from '../src/pvpRegister';
 import { SCHEMA_SQL } from './schema';
 import snapshot from '../../../pw-pvp/src/server/__tests__/fixtures/regSnapshot.json';
 import rulesV122 from '../../../pw-pvp/src/server/__tests__/fixtures/rulesV122.json';
@@ -63,6 +63,11 @@ class FakeStore implements PvpStore {
         return { nickname: String(r.nickname), status: String(r.status), sig: typeof sig === 'string' ? sig : null };
       });
   }
+  /** Як PostgREST: жива заявка з міткою акаунта (колонка account_tag) — найстаріша. */
+  async playerRegistration(tournamentId: string, tag: string) {
+    const row = this.inserts.find((r) => r.tournament_id === tournamentId && r.status !== 'rejected' && r.account_tag === tag);
+    return row ? { nickname: String(row.nickname), status: String(row.status) } : null;
+  }
   async rules(version: string | null) {
     this.rulesCalls.push(version);
     if (version == null) return this.versions[0] ?? null;
@@ -71,7 +76,10 @@ class FakeStore implements PvpStore {
   async registrationStatus() {
     return this.existingStatus;
   }
+  /** Затримка insert (мс) — щоб дві заявки справді йшли одночасно. */
+  insertDelayMs = 0;
   async insertRegistration(row: Record<string, unknown>) {
+    if (this.insertDelayMs) await new Promise((r) => setTimeout(r, this.insertDelayMs));
     const err = this.insertErrors.shift();
     if (err) throw err;
     this.inserts.push(row);
@@ -196,15 +204,18 @@ describe('POST /api/pvp/registrations', () => {
     expect(again.statusCode).toBe(409);
     expect(again.json()).toEqual({
       error: 'already_registered',
-      message: 'Цим персонажем уже подано заявку на цей турнір (нікнейм «Tayforn», на розгляді) — друга заявка тим самим персонажем не приймається.',
+      // перевірка акаунта йде першою — вона ширша за «той самий персонаж»
+      message: expect.stringMatching(/^З цього Discord-акаунта вже подано заявку на цей турнір \(нікнейм «Tayforn», на розгляді\) — одна заявка з акаунта\./),
     });
     store.inserts[0].status = 'confirmed';
     expect((await register(app, s, body('Tayforn3'))).json().message).toMatch(/«Tayforn», підтверджена/);
     expect(store.inserts).toHaveLength(1);
 
-    // інший персонаж того самого гравця й гість — не обмежені цим правилом
+    // інший персонаж того самого акаунта — теж ні (одна заявка з Discord-акаунта); гість без входу — можна
     const other = await saveCharacter(app, s, 'Twink');
-    expect((await register(app, s, { ...body('Twink'), characterId: other.id })).statusCode).toBe(200);
+    const twink = await register(app, s, { ...body('Twink'), characterId: other.id });
+    expect(twink.statusCode).toBe(409);
+    expect(twink.json().message).toMatch(/З цього Discord-акаунта вже подано заявку.*«Tayforn», підтверджена/);
     expect((await register(app, null, guestBody({ nickname: 'Гість' }))).statusCode).toBe(200);
 
     // відхилену заявку персонажа не рахуємо — подати знову можна
@@ -212,7 +223,176 @@ describe('POST /api/pvp/registrations', () => {
     const retry = await register(app, s, body('Tayforn'));
     expect(retry.statusCode).toBe(200);
     expect(store.inserts.at(-1)).toMatchObject({ character_id: c.id, nickname: 'Tayforn', status: 'pending' });
-    expect(store.inserts).toHaveLength(4);
+    expect(store.inserts).toHaveLength(3);
+    await app.close();
+  });
+
+  it('один Discord-акаунт — одна жива заявка: будь-яким персонажем, чернеткою з сесією чи іншим ніком; гість без входу й інший акаунт — окремо', async () => {
+    const app = await makeApp();
+    const s = await login(app, member('u1', 'Tayforn'));
+    const c = await saveCharacter(app, s);
+    const first = await register(app, s, { tournamentId: T_ID, nickname: 'Tayforn', rulesAck: true, characterId: c.id });
+    expect(first.statusCode).toBe(200);
+    const tag = store.inserts[0].account_tag;
+    expect(tag).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    // мітка акаунта — окрема колонка, не в розкладі (його переписує перерахунок адміна)
+    expect(store.inserts[0].item_breakdown).not.toHaveProperty('pid');
+
+    // чернетка в тілі, але з сесією — та сама людина
+    const draft = await register(app, s, guestBody({ nickname: 'Alt' }));
+    expect(draft.statusCode).toBe(409);
+    expect(draft.json()).toMatchObject({ error: 'already_registered', message: expect.stringMatching(/З цього Discord-акаунта.*«Tayforn», на розгляді/) });
+    // без сесії — гість: акаунта немає, правило не діє (і мітки акаунта в рядку немає)
+    expect((await register(app, null, guestBody({ nickname: 'Гість' }))).statusCode).toBe(200);
+    expect(store.inserts.at(-1)).not.toHaveProperty('account_tag');
+    // інший акаунт — своя заявка
+    const s2 = await login(app, member('u2', 'Other'));
+    const c2 = await saveCharacter(app, s2, 'Other');
+    expect((await register(app, s2, { tournamentId: T_ID, nickname: 'Other', rulesAck: true, characterId: c2.id })).statusCode).toBe(200);
+    expect(store.inserts.at(-1)!.account_tag).not.toBe(tag);
+    // мітка акаунта на іншому турнірі — інша (заявки з різних турнірів не звʼязати)
+    expect(playerTag('k', T_ID, 'p1')).not.toBe(playerTag('k', '00000000-0000-4000-8000-000000000001', 'p1'));
+    expect(store.inserts).toHaveLength(3);
+    await app.close();
+  });
+
+  it('дві одночасні заявки з одного акаунта (різними персонажами) — проходить лише одна', async () => {
+    const app = await makeApp();
+    const s = await login(app, member('u1', 'Tayforn'));
+    const a = await saveCharacter(app, s, 'Main');
+    const b = await saveCharacter(app, s, 'Twink');
+    store.insertDelayMs = 300;
+    clock += 60_000; // повний запас частоти
+    const send = (nickname: string, characterId: string) =>
+      app.inject({
+        method: 'POST', url: '/api/pvp/registrations', headers: { origin: ORIGIN }, cookies: { [SESSION_COOKIE]: s },
+        payload: { tournamentId: T_ID, nickname, rulesAck: true, characterId },
+      });
+    const [r1, r2] = await Promise.all([send('Main', a.id), send('Twink', b.id)]);
+    expect([r1.statusCode, r2.statusCode].sort()).toEqual([200, 409]);
+    expect(store.inserts).toHaveLength(1);
+    await app.close();
+  });
+
+  it('заявка, подана до мітки акаунта (є підпис персонажа, немає account_tag), — той самий персонаж однаково 409', async () => {
+    const app = await makeApp();
+    const s = await login(app, member('u1', 'Tayforn'));
+    const c = await saveCharacter(app, s);
+    store.inserts.push({
+      tournament_id: T_ID, character_id: c.id, nickname: 'Old', status: 'pending',
+      item_breakdown: { v: 1, sig: registrationSig(CONFIG.pvpSupabaseServiceKey ?? 'pvp-dev-sign-key', T_ID, c.id) },
+    });
+    const res = await register(app, s, { tournamentId: T_ID, nickname: 'Tayforn', rulesAck: true, characterId: c.id });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().message).toMatch(/^Цим персонажем уже подано заявку на цей турнір \(нікнейм «Old», на розгляді\)/);
+    await app.close();
+  });
+
+  it('забанений у ладдері з живою сесією: чернетка приймається як від гостя, але рахується на його акаунт', async () => {
+    const app = await makeApp();
+    const s = await login(app, member('u1', 'Tayforn'));
+    await db.query("update ladder_players set banned = true where discord_id = 'u1'");
+    const first = await register(app, s, guestBody({ nickname: 'Banned1' }));
+    expect(first.statusCode).toBe(200);
+    expect(store.inserts[0].account_tag).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    const second = await register(app, s, guestBody({ nickname: 'Banned2' }));
+    expect(second.statusCode).toBe(409);
+    expect(second.json().error).toBe('already_registered');
+    await app.close();
+  });
+
+  it('після відхилення — чернеткою з тією самою сесією знову можна', async () => {
+    const app = await makeApp();
+    const s = await login(app, member('u1', 'Tayforn'));
+    expect((await register(app, s, guestBody({ nickname: 'One' }))).statusCode).toBe(200);
+    expect((await register(app, s, guestBody({ nickname: 'Two' }))).statusCode).toBe(409);
+    store.inserts[0].status = 'rejected';
+    expect((await register(app, s, guestBody({ nickname: 'Two' }))).statusCode).toBe(200);
+    expect(store.inserts.map((r) => r.account_tag)).toEqual([store.inserts[0].account_tag, store.inserts[0].account_tag]);
+    await app.close();
+  });
+
+  it('чернетка з сесією бере й ліміт гравця: з іншого IP той самий акаунт — 429; гість без сесії з того IP — свій ліміт', async () => {
+    const app = await makeApp();
+    const s = await login(app, member('u1', 'Tayforn'));
+    clock += 60_000; // повний запас
+    const post = (ip: string, session: string | null, nickname: string) =>
+      app.inject({
+        method: 'POST', url: '/api/pvp/registrations',
+        headers: { origin: ORIGIN, 'x-forwarded-for': ip }, cookies: session ? { [SESSION_COOKIE]: session } : {},
+        payload: guestBody({ nickname }),
+      });
+    for (let i = 0; i < 3; i++) expect((await post('10.0.0.1', s, 'A' + i)).statusCode).not.toBe(429);
+    const other = await post('10.0.0.2', s, 'B');
+    expect(other.statusCode).toBe(429); // запас гравця вичерпано, хоч IP новий
+    expect((await post('10.0.0.3', null, 'Guest')).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('cookie сесії є, а база ладдера не відповідає — 502 upstream, без запису (не «як гість»)', async () => {
+    const app = await makeApp();
+    const s = await login(app, member('u1', 'Tayforn'));
+    const realQuery = db.query.bind(db);
+    db.query = (async () => {
+      throw new Error('connect ECONNREFUSED');
+    }) as typeof db.query;
+    try {
+      const res = await register(app, s, guestBody({ nickname: 'DbDown' }));
+      expect(res.statusCode).toBe(502);
+      expect(res.json().error).toBe('upstream');
+      // без cookie гість до бази ладдера не ходить — і далі подається
+      expect((await register(app, null, guestBody({ nickname: 'Guest' }))).statusCode).toBe(200);
+    } finally {
+      db.query = realQuery;
+    }
+    expect(store.inserts.map((r) => r.nickname)).toEqual(['Guest']);
+    expect(logged()).toContainEqual(expect.objectContaining({ level: 40, msg: expect.stringMatching(/сесію не перевірено/) }));
+    await app.close();
+  });
+
+  it('гостьовий шлях: ліміт за IP — раніше за звернення до бази по сесії', async () => {
+    const app = await makeApp();
+    const s = await login(app, member('u1', 'Tayforn'));
+    clock += 60_000;
+    const post = (session: string | null, nickname: string) =>
+      app.inject({
+        method: 'POST', url: '/api/pvp/registrations',
+        headers: { origin: ORIGIN, 'x-forwarded-for': '10.9.9.9' }, cookies: session ? { [SESSION_COOKIE]: session } : {},
+        payload: guestBody({ nickname }),
+      });
+    for (let i = 0; i < 3; i++) expect((await post(null, 'G' + i)).statusCode).not.toBe(429);
+    let dbCalls = 0;
+    const realQuery = db.query.bind(db);
+    db.query = ((...a: Parameters<typeof db.query>) => {
+      dbCalls++;
+      return realQuery(...a);
+    }) as typeof db.query;
+    try {
+      expect((await post(s, 'WithCookie')).statusCode).toBe(429);
+      expect(dbCalls).toBe(0);
+    } finally {
+      db.query = realQuery;
+    }
+    await app.close();
+  });
+
+  it('унікальний індекс акаунта (0035) спрацював у базі — 409 already_registered з ніком наявної заявки', async () => {
+    const app = await makeApp();
+    const s = await login(app, member('u1', 'Tayforn'));
+    const c = await saveCharacter(app, s);
+    // перевірка не бачить рядка (інший процес / insert після тайм-ауту), а база — бачить
+    const real = store.playerRegistration.bind(store);
+    let calls = 0;
+    store.playerRegistration = async (t, tag) => (++calls === 1 ? null : { nickname: 'Parallel', status: 'pending' });
+    store.insertErrors.push(new PvpDbError(409, '23505', 'duplicate key value violates unique constraint "registrations_tournament_account_uidx"'));
+    const res = await register(app, s, { tournamentId: T_ID, nickname: 'Tayforn', rulesAck: true, characterId: c.id });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: 'already_registered', message: expect.stringMatching(/«Parallel», на розгляді/) });
+    // а дубль ніку (інший індекс) — як і раніше, про нік
+    store.playerRegistration = real;
+    store.insertErrors.push(new PvpDbError(409, '23505', 'duplicate key value violates unique constraint "registrations_tournament_nickname_uidx"'));
+    const nick = await register(app, null, guestBody({ nickname: 'Taken' }));
+    expect(nick.json().error).toBe('duplicate_nickname');
     await app.close();
   });
 
@@ -390,20 +570,6 @@ describe('POST /api/pvp/registrations', () => {
     await app.close();
   });
 
-  it('до міграції 0032 (немає item_points) — повтор без колонок скору v2', async () => {
-    const app = await makeApp();
-    store.insertErrors.push(new PvpDbError(400, 'PGRST204', "Could not find the 'item_points' column of 'registrations' in the schema cache"));
-    const res = await register(app, null, guestBody());
-    expect(res.statusCode).toBe(200);
-    expect(store.inserts).toHaveLength(1);
-    expect(store.inserts[0]).not.toHaveProperty('item_points');
-    expect(store.inserts[0]).not.toHaveProperty('item_breakdown');
-    expect(store.inserts[0]).toHaveProperty('char_class', 'archer');
-    // у журнал — попередження, що міграції 0032 ще немає
-    expect(logged()).toContainEqual(expect.objectContaining({ level: 40, msg: expect.stringMatching(/колонок 0032/) }));
-    await app.close();
-  });
-
   it('база турнірів не відповідає — 502 upstream і рядок у лозі; інша помилка insert — теж 502', async () => {
     const app = await makeApp();
     store.failTournament = true;
@@ -540,6 +706,8 @@ describe('createPvpSupabaseStore (PostgREST)', () => {
       // characterRegistrations: дві живі (одна без підпису), потім жодної
       { status: 200, body: [{ nickname: 'Tayforn', status: 'confirmed', sig: 'S1' }, { nickname: 'x', status: 'pending', sig: null }] },
       { status: 200, body: [] },
+      // playerRegistration
+      { status: 200, body: [{ nickname: 'Tayforn', status: 'pending' }] },
     ]);
     const s = createPvpSupabaseStore('https://pvp.example.supabase.co/', KEY, f.impl);
     expect(await s.tournament(T_ID)).toMatchObject({ id: T_ID });
@@ -554,6 +722,7 @@ describe('createPvpSupabaseStore (PostgREST)', () => {
       { nickname: 'x', status: 'pending', sig: null },
     ]);
     expect(await s.characterRegistrations(T_ID, C_ID)).toEqual([]);
+    expect(await s.playerRegistration(T_ID, 'PiD_-1')).toEqual({ nickname: 'Tayforn', status: 'pending' });
 
     expect(f.calls[0].url).toBe(`https://pvp.example.supabase.co/rest/v1/tournaments?id=eq.${T_ID}&select=id,name,status,event_date,team_mode,team_size,balance_rules_version&limit=1`);
     expect(f.calls[2].url).toContain('balance_rules?select=version,rules&order=created_at.desc&limit=1');
@@ -572,7 +741,11 @@ describe('createPvpSupabaseStore (PostgREST)', () => {
       `https://pvp.example.supabase.co/rest/v1/registrations?tournament_id=eq.${T_ID}&kind=eq.player` +
         `&character_id=eq.${C_ID}&status=neq.rejected&select=nickname,status,sig:item_breakdown->>sig&order=created_at.asc&limit=20`,
     );
-    expect(f.calls).toHaveLength(11);
+    expect(url(11)).toBe(
+      `https://pvp.example.supabase.co/rest/v1/registrations?tournament_id=eq.${T_ID}&kind=eq.player&status=neq.rejected` +
+        '&account_tag=eq.PiD_-1&select=nickname,status&order=created_at.asc&limit=1',
+    );
+    expect(f.calls).toHaveLength(12);
     for (const c of f.calls) {
       expect(c.url).not.toContain(KEY);
       expect((c.init.headers as Record<string, string>).apikey).toBe(KEY);
@@ -694,5 +867,98 @@ describe('pw-pvp 0034_server_registrations.sql (RLS публічного insert)
     // без заявленого рядка «and character_id is null» — рівно політика 0032 (для старого сайту)
     await pg.exec(rollback.replace(/^\s*and character_id is null\n/m, ''));
     expect(await anonInsert(RANDOM, CHAR)).toBe('ok');
+  });
+});
+
+describe('pw-pvp 0035_account_tag.sql (одна жива заявка з акаунта)', () => {
+  const dir = '../../../pw-pvp/supabase/migrations/';
+  const SQL34 = readFileSync(fileURLToPath(new URL(dir + '0034_server_registrations.sql', import.meta.url)), 'utf8');
+  const SQL35 = readFileSync(fileURLToPath(new URL(dir + '0035_account_tag.sql', import.meta.url)), 'utf8');
+  const FIXED = '11111111-1111-4111-8111-111111111111';
+  const RANDOM = '22222222-2222-4222-8222-222222222222';
+  const TAG = 'A'.repeat(32);
+  let pg: PGlite;
+
+  beforeEach(async () => {
+    pg = new PGlite();
+    await pg.exec(`
+      create table tournaments (
+        id uuid primary key, status text not null, event_date date not null,
+        team_mode text not null default 'fixed'
+      );
+      create table registrations (
+        id uuid primary key default gen_random_uuid(),
+        tournament_id uuid not null references tournaments(id),
+        nickname text not null, kind text not null default 'player', team_registration_id uuid,
+        status text not null default 'pending', rules_ack boolean not null default false,
+        character_id uuid, char_class text, character_snapshot jsonb
+      );
+      alter table registrations enable row level security;
+      create role anon nologin;
+      grant select on tournaments to anon;
+      grant insert on registrations to anon;
+      insert into tournaments values
+        ('${FIXED}', 'registration_open', current_date, 'fixed'),
+        ('${RANDOM}', 'registration_open', current_date, 'balanced_random');
+    `);
+    await pg.exec(SQL34);
+    await pg.exec(SQL35);
+    await pg.exec(SQL35); // ідемпотентна
+  });
+  afterEach(() => pg.close());
+
+  const backendInsert = (nickname: string, tag: string | null, status = 'pending') =>
+    pg.query(`insert into registrations (tournament_id, nickname, rules_ack, status, account_tag) values ($1, $2, true, $3, $4) returning id`, [RANDOM, nickname, status, tag]);
+  const code = async (p: Promise<unknown>): Promise<string> => {
+    try {
+      await p;
+      return 'ok';
+    } catch (e) {
+      return (e as { code?: string }).code ?? String(e);
+    }
+  };
+
+  it('друга жива заявка з тим самим account_tag — 23505; відхилена не рахується; без мітки (гості) — без обмеження', async () => {
+    expect(await code(backendInsert('One', TAG))).toBe('ok');
+    expect(await code(backendInsert('Two', TAG))).toBe('23505');
+    await pg.exec(`update registrations set status = 'rejected' where nickname = 'One'`);
+    expect(await code(backendInsert('Two', TAG))).toBe('ok');
+    // адмін повертає відхилену, коли в акаунта вже є нова, — база не дає
+    expect(await code(pg.query(`update registrations set status = 'confirmed' where nickname = 'One'`))).toBe('23505');
+    // інший турнір / без мітки — окремо
+    expect(await code(backendInsert('Guest1', null))).toBe('ok');
+    expect(await code(backendInsert('Guest2', null))).toBe('ok');
+    // довжина мітки
+    expect(await code(backendInsert('Short', 'abc'))).toBe('23514');
+  });
+
+  it('публічний insert не ставить account_tag; звичайний турнір без мітки — як і в 0034', async () => {
+    const anon = async (tag: string | null) => {
+      await pg.exec('set role anon');
+      try {
+        return await code(pg.query(`insert into registrations (tournament_id, nickname, rules_ack, account_tag) values ($1, 'Nick' || $2::text, true, $3)`, [FIXED, tag ?? 'x', tag]));
+      } finally {
+        await pg.exec('reset role');
+      }
+    };
+    expect(await anon(null)).toBe('ok');
+    expect(await anon(TAG)).toBe('42501');
+  });
+
+  it('SQL відкату з шапки — валідний: колонка й індекс зникають, політика — як у 0034', async () => {
+    const lines = SQL35.split('\n');
+    const from = lines.findIndex((l) => l.startsWith('-- Відкат'));
+    expect(from).toBeGreaterThan(0);
+    const rollback = lines.slice(from).filter((l) => l.startsWith('--   ')).map((l) => l.slice(5)).join('\n');
+    await pg.exec(rollback);
+    const cols = await pg.query<{ n: number }>(`select count(*)::int as n from information_schema.columns where table_name = 'registrations' and column_name = 'account_tag'`);
+    expect(cols.rows[0].n).toBe(0);
+    await pg.exec('set role anon');
+    try {
+      expect(await code(pg.query(`insert into registrations (tournament_id, nickname, rules_ack) values ($1, 'AfterRollback', true)`, [FIXED]))).toBe('ok');
+      expect(await code(pg.query(`insert into registrations (tournament_id, nickname, rules_ack) values ($1, 'Random', true)`, [RANDOM]))).toBe('42501');
+    } finally {
+      await pg.exec('reset role');
+    }
   });
 });

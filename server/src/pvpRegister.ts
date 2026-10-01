@@ -79,6 +79,9 @@ export interface PvpStore {
   /** Живі (не відхилені) заявки цього збереженого персонажа на турнір — від найстарішої, до
    * CHARACTER_ROWS_MAX; sig — підпис бекенда з item_breakdown (null — рядок записав не бекенд). */
   characterRegistrations(tournamentId: string, characterId: string): Promise<CharacterRegistrationRow[]>;
+  /** Жива (не відхилена) заявка з міткою акаунта (колонка account_tag, міграція 0035 у pw-pvp) —
+   * найстаріша; null — немає. */
+  playerRegistration(tournamentId: string, tag: string): Promise<{ nickname: string; status: string } | null>;
   insertRegistration(row: Record<string, unknown>): Promise<{ id: string }>;
 }
 
@@ -158,6 +161,12 @@ export function createPvpSupabaseStore(baseUrl: string, serviceKey: string, fetc
         `&select=nickname,status,sig:item_breakdown->>sig&order=created_at.asc&limit=${CHARACTER_ROWS_MAX}`;
       const rows = await call<Array<{ nickname: string; status: string; sig?: string | null }>>(q);
       return (Array.isArray(rows) ? rows : []).map((r) => ({ nickname: r.nickname, status: r.status, sig: typeof r.sig === 'string' ? r.sig : null }));
+    },
+    async playerRegistration(tournamentId, tag) {
+      const q =
+        `registrations?tournament_id=eq.${encodeURIComponent(tournamentId)}&kind=eq.player&status=neq.rejected` +
+        `&account_tag=eq.${encodeURIComponent(tag)}&select=nickname,status&order=created_at.asc&limit=1`;
+      return first(await call<Array<{ nickname: string; status: string }>>(q));
     },
     async insertRegistration(row) {
       const rows = await call<Array<{ id: string }>>('registrations?select=id', { method: 'POST', body: row, prefer: 'return=representation' });
@@ -240,9 +249,13 @@ function withName(doc: unknown, nickname: string): unknown {
 /** Статус живої заявки — для тексту гравцю (CHECK у registrations: pending/confirmed/rejected). */
 const STATUS_TEXT: Record<string, string> = { pending: 'на розгляді', confirmed: 'підтверджена' };
 
-/** Помилка «колонки немає» (до міграції 0032 у pw-pvp): як isMissingColumnError на сайті турнірів. */
-function isMissingColumn(e: PvpDbError): boolean {
-  return e.code === 'PGRST204' || e.code === '42703' || (/item_points|item_breakdown/.test(e.message) && /column/i.test(e.message));
+/** 409: з цього Discord-акаунта вже є жива заявка на турнір (mine — її нік і статус, якщо знайшлась). */
+function accountTaken(mine: { nickname: string; status: string } | null): ApiError {
+  const which = mine ? ` (нікнейм «${mine.nickname}», ${STATUS_TEXT[mine.status] ?? mine.status})` : '';
+  return new ApiError(
+    'already_registered',
+    `З цього Discord-акаунта вже подано заявку на цей турнір${which} — одна заявка з акаунта. Щоб змінити персонажа чи нік, напиши адміну: він відхилить попередню.`,
+  );
 }
 
 export interface PvpRegisterDeps {
@@ -251,6 +264,9 @@ export interface PvpRegisterDeps {
   /** null — прийом заявок не налаштовано (503). */
   store: PvpStore | null;
   requirePlayer: (req: FastifyRequest) => Promise<PlayerRow>;
+  /** Гравець за сесією Discord, якщо вона є (null — гість без входу). Забанений теж: у pvp він
+   * подається як гість, але заявка рахується на його акаунт. */
+  sessionPlayer: (req: FastifyRequest) => Promise<PlayerRow | null>;
   assertOrigin: (req: FastifyRequest) => void;
   /** Секрет підпису заявок (HMAC) — у проді service-ключ бази турнірів; назовні не виходить. */
   signKey: string;
@@ -260,6 +276,14 @@ export interface PvpRegisterDeps {
  * підписом міг записати лише бекенд — анонімний ключ його не підробить. */
 export function registrationSig(key: string, tournamentId: string, characterId: string): string {
   return createHmac('sha256', key).update(`pvp-reg-v1|${tournamentId}|${characterId}`).digest('base64url').slice(0, 32);
+}
+
+/** Мітка Discord-акаунта в заявці (колонка account_tag): HMAC(турнір, гравець ладдера).
+ * Лише бекенд може її поставити, з неї не видно, хто це, і між турнірами вона різна. Ключ —
+ * той самий секрет, що й для sig: заміна PVP_SUPABASE_SERVICE_KEY міняє всі мітки, тож на
+ * відкритих турнірах кожен акаунт зможе подати ще раз — ключ міняти, коли їх немає. */
+export function playerTag(key: string, tournamentId: string, playerId: string): string {
+  return createHmac('sha256', key).update(`pvp-player-v1|${tournamentId}|${playerId}`).digest('base64url').slice(0, 32);
 }
 
 function sigMatches(got: string | null, want: string): boolean {
@@ -273,7 +297,26 @@ let scorerPromise: Promise<typeof Scorer> | null = null;
 const loadScorer = (): Promise<typeof Scorer> => (scorerPromise ??= import('../../../pw-pvp/src/server/scorer'));
 
 export function registerPvpRegistrationRoutes(app: FastifyInstance, deps: PvpRegisterDeps): void {
-  const { db, now, store, requirePlayer, assertOrigin, signKey } = deps;
+  const { db, now, store, requirePlayer, sessionPlayer, assertOrigin, signKey } = deps;
+
+  // Заявки одного гравця — строго по черзі (бекенд — один процес): дві одночасні не
+  // проскочать повз перевірку «одна заявка з акаунта» до того, як перша запишеться.
+  const queues = new Map<string, Promise<void>>();
+  async function onePerPlayer<T>(playerId: string | null, fn: () => Promise<T>): Promise<T> {
+    if (!playerId) return fn();
+    const prev = queues.get(playerId) ?? Promise.resolve();
+    let release!: () => void;
+    const done = new Promise<void>((r) => (release = r));
+    const tail = prev.then(() => done);
+    queues.set(playerId, tail);
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (queues.get(playerId) === tail) queues.delete(playerId);
+    }
+  }
   const buckets = new Map<string, Bucket>();
   const rulesCache = new Map<string, PvpRules>();
 
@@ -326,24 +369,17 @@ export function registerPvpRegistrationRoutes(app: FastifyInstance, deps: PvpReg
     return latest ? { rulesRaw: latest.rules, rulesVersion: latest.version } : { rulesRaw: null, rulesVersion: builtin };
   }
 
-  async function insert(s: PvpStore, row: Record<string, unknown>, nickname: string, tournamentId: string): Promise<string> {
+  async function insert(s: PvpStore, row: Record<string, unknown>, nickname: string, tournamentId: string, tag: string | null): Promise<string> {
     try {
-      try {
-        return (await s.insertRegistration(row)).id;
-      } catch (e) {
-        // До міграції 0032 колонок item_points/item_breakdown немає — один раз без них
-        // (як submitRegistration у браузері); скор тоді табличний, з анкети.
-        if (!(e instanceof PvpDbError) || !isMissingColumn(e)) throw e;
-        app.log.warn('pvp: колонок 0032 ще немає — заявка без item_points/item_breakdown');
-        const legacy = { ...row };
-        delete legacy.item_points;
-        delete legacy.item_breakdown;
-        return (await s.insertRegistration(legacy)).id;
-      }
+      return (await s.insertRegistration(row)).id;
     } catch (e) {
       if (e instanceof PvpDbError && e.code === '23505') {
-        // Дубль ніку (registrations_tournament_nickname_uidx). Відхилена заявка з тим самим
-        // ніком блокує повторну подачу, поки індекс не частковий (міграція 0033 у pw-pvp);
+        // Друга жива заявка з того самого акаунта (індекс 0035): запит, що проскочив повз
+        // перевірку (інший процес, insert, завершений уже після тайм-ауту).
+        if (tag && /registrations_tournament_account_uidx/.test(e.message)) {
+          throw accountTaken(await s.playerRegistration(tournamentId, tag).catch(() => null));
+        }
+        // Дубль ніку (registrations_tournament_nickname_uidx; після 0033 відхилена нік не тримає).
         // registrationStatus спершу шукає живу заявку — «відхилено» лише коли живої немає.
         const status = await s.registrationStatus(tournamentId, nickname).catch(() => null);
         throw new ApiError(
@@ -366,12 +402,15 @@ export function registerPvpRegistrationRoutes(app: FastifyInstance, deps: PvpReg
     if (!store) throw new ApiError('not_configured', 'Прийом заявок бекендом не налаштовано.');
     const body = parseRegistrationBody(req.body);
 
-    // Документ: свій збережений персонаж (вхід через Discord) або чернетка гостя з тіла.
+    // Документ: свій збережений персонаж (вхід через Discord) або чернетка з тіла. Є сесія
+    // Discord (навіть із чернеткою) — заявка рахується на цей акаунт; без сесії — гість.
     let doc: unknown;
     let characterId: string | null = null;
     let characterRev: number | null = null;
+    let player: PlayerRow | null;
     if (body.characterId) {
       const p = await requirePlayer(req);
+      player = p;
       limit('p:' + p.id);
       const { rows } = await db.query<{ doc: unknown; revision: number }>(
         'select doc, revision from pvp_characters where id = $1 and player_id = $2 and archived_at is null',
@@ -382,7 +421,11 @@ export function registerPvpRegistrationRoutes(app: FastifyInstance, deps: PvpReg
       characterId = body.characterId;
       characterRev = rows[0].revision;
     } else {
+      // Спершу ліміт за IP (без звернення до бази), потім сесія — лише щоб зарахувати заявку
+      // на акаунт (і ліміт гравця): без сесії — гість.
       limit('ip:' + req.ip);
+      player = await sessionPlayer(req);
+      if (player) limit('p:' + player.id);
       doc = withName(body.doc, body.nickname);
       checkCharacterDoc(doc); // розмір, глибина, рядки — як при збереженні персонажа
     }
@@ -398,48 +441,62 @@ export function registerPvpRegistrationRoutes(app: FastifyInstance, deps: PvpReg
       throw new ApiError('bad_request', 'Через бекенд подаються лише заявки на фул-рандом — онови сторінку.');
     }
 
-    // Один збережений персонаж — одна жива заявка на турнір (з іншим ніком теж). Відхилена
-    // не рахується: після відхилення можна подати знову. Рахуються лише рядки з підписом
-    // бекенда: до міграції 0034 анонімний ключ може вставити рядок із чужим character_id —
-    // такий рядок справжнього власника не блокує. Гість (doc у тілі) персонажа в профілі
-    // не має — його дублі, як і раніше, звіряє адмін.
-    const ownCharacter = characterId;
-    const sig = ownCharacter ? registrationSig(signKey, t.id, ownCharacter) : null;
-    if (ownCharacter && sig) {
-      const rows = await upstream('заявка персонажа', () => store.characterRegistrations(t.id, ownCharacter));
-      const live = rows.find((r) => sigMatches(r.sig, sig));
-      if (live) {
-        throw new ApiError(
-          'already_registered',
-          `Цим персонажем уже подано заявку на цей турнір (нікнейм «${live.nickname}», ${STATUS_TEXT[live.status] ?? live.status}) — друга заявка тим самим персонажем не приймається.`,
-        );
+    // Одна жива заявка з Discord-акаунта на турнір — будь-яким персонажем, чернеткою чи ніком.
+    // Мітка акаунта — колонка account_tag (0035): її пише лише бекенд, перерахунок адміна її не
+    // чіпає, а частковий унікальний індекс тримає правило в самій базі. Тут — швидка перевірка
+    // з зрозумілим текстом і черга запитів гравця. Відхилена не рахується: після відхилення
+    // можна подати знову. Гість без входу акаунта не має — його дублі звіряє адмін.
+    const tag = player ? playerTag(signKey, t.id, player.id) : null;
+    return onePerPlayer(player?.id ?? null, async () => {
+      if (tag) {
+        const mine = await upstream('заявка акаунта', () => store.playerRegistration(t.id, tag));
+        if (mine) throw accountTaken(mine);
       }
-    }
 
-    const scorer = await loadScorer();
-    const { rulesRaw, rulesVersion } = await upstream('шкала', () => rulesFor(store, t.balance_rules_version, scorer.BUILTIN_RULES_VERSION));
-    const res = scorer.scoreRegistration({
-      doc, rulesRaw, rulesVersion, teamSize: t.team_size,
-      tournament: { teamMode: t.team_mode, teamSize: t.team_size },
-      scorer: SCORER_ID,
-      tags: { ...(body.nonce ? { nonce: body.nonce } : {}), ...(sig ? { sig } : {}) },
+      // Один збережений персонаж — одна жива заявка на турнір (з іншим ніком теж). Відхилена
+      // не рахується: після відхилення можна подати знову. Рахуються лише рядки з підписом
+      // бекенда: до міграції 0034 анонімний ключ може вставити рядок із чужим character_id —
+      // такий рядок справжнього власника не блокує. Гість (doc у тілі) персонажа в профілі
+      // не має — його дублі, як і раніше, звіряє адмін.
+      const ownCharacter = characterId;
+      const sig = ownCharacter ? registrationSig(signKey, t.id, ownCharacter) : null;
+      if (ownCharacter && sig) {
+        const rows = await upstream('заявка персонажа', () => store.characterRegistrations(t.id, ownCharacter));
+        const live = rows.find((r) => sigMatches(r.sig, sig));
+        if (live) {
+          throw new ApiError(
+            'already_registered',
+            `Цим персонажем уже подано заявку на цей турнір (нікнейм «${live.nickname}», ${STATUS_TEXT[live.status] ?? live.status}) — друга заявка тим самим персонажем не приймається.`,
+          );
+        }
+      }
+
+      const scorer = await loadScorer();
+      const { rulesRaw, rulesVersion } = await upstream('шкала', () => rulesFor(store, t.balance_rules_version, scorer.BUILTIN_RULES_VERSION));
+      const res = scorer.scoreRegistration({
+        doc, rulesRaw, rulesVersion, teamSize: t.team_size,
+        tournament: { teamMode: t.team_mode, teamSize: t.team_size },
+        scorer: SCORER_ID,
+        tags: { ...(body.nonce ? { nonce: body.nonce } : {}), ...(sig ? { sig } : {}) },
+      });
+      if (!res.ok) throw new ApiError('bad_request', res.blockReason);
+
+      const row: Record<string, unknown> = {
+        tournament_id: t.id,
+        nickname: body.nickname,
+        rules_ack: true,
+        member_nicknames: null,
+        kind: 'player',
+        status: 'pending',
+        ...res.columns,
+        character_id: characterId,
+        character_rev: characterRev,
+        character_snapshot: res.doc,
+        ...(tag ? { account_tag: tag } : {}),
+        doll_confirmed_at: new Date(now()).toISOString(),
+      };
+      const id = await upstream('заявка', () => insert(store, row, body.nickname, t.id, tag));
+      return { id, itemPoints: res.itemPoints, score: res.score, rulesVersion: res.rulesVersion, warn: res.warn };
     });
-    if (!res.ok) throw new ApiError('bad_request', res.blockReason);
-
-    const row: Record<string, unknown> = {
-      tournament_id: t.id,
-      nickname: body.nickname,
-      rules_ack: true,
-      member_nicknames: null,
-      kind: 'player',
-      status: 'pending',
-      ...res.columns,
-      character_id: characterId,
-      character_rev: characterRev,
-      character_snapshot: res.doc,
-      doll_confirmed_at: new Date(now()).toISOString(),
-    };
-    const id = await upstream('заявка', () => insert(store, row, body.nickname, t.id));
-    return { id, itemPoints: res.itemPoints, score: res.score, rulesVersion: res.rulesVersion, warn: res.warn };
   });
 }

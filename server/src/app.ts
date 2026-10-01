@@ -99,6 +99,21 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return player;
   }
 
+  /** Гравець за сесією, якщо вона є (без cookie — гість, null, без звернення до бази) — для
+   * обліку заявок pvp. Забанений у ладдері теж повертається: у pvp він подається як гість, але
+   * заявка рахується на його акаунт. Cookie є, а база ладдера не відповідає — 502, а не «гість»:
+   * інакше учасник у цей час подав би заявку без мітки акаунта й потім ще одну. */
+  async function sessionPlayer(req: FastifyRequest): Promise<PlayerRow | null> {
+    const token = req.cookies[SESSION_COOKIE];
+    if (!token) return null;
+    try {
+      return (await findSessionPlayer(db, token)) ?? null;
+    } catch (err) {
+      app.log.warn({ err }, 'pvp: сесію не перевірено (база ладдера) — 502 upstream');
+      throw new ApiError('upstream', 'База гравців зараз не відповідає — спробуй трохи пізніше.');
+    }
+  }
+
   /** Захист від CSRF: змінювальні запити лише зі свого origin. SameSite=Lax
    * уже блокує міжсайтовий POST із cookie — це друга лінія. */
   function assertOrigin(req: FastifyRequest): void {
@@ -244,7 +259,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         ? createPvpSupabaseStore(config.pvpSupabaseUrl, config.pvpSupabaseServiceKey)
         : null;
   registerPvpRegistrationRoutes(app, {
-    db, now, store: pvpStore, requirePlayer, assertOrigin,
+    db, now, store: pvpStore, requirePlayer, sessionPlayer, assertOrigin,
     // Підпис заявок — секретом сервера (service-ключ бази турнірів); без нього прийом і так 503.
     signKey: deps.pvpSignKey ?? config.pvpSupabaseServiceKey ?? 'pvp-dev-sign-key',
   });

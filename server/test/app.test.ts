@@ -9,7 +9,7 @@ import { SCHEMA_SQL, TEST_SETTINGS } from './schema';
 
 const CONFIG: Config = {
   host: '127.0.0.1', port: 0, publicOrigin: 'http://localhost', cookieSecure: false,
-  allowedOrigins: ['http://localhost'], cookieDomain: null, supabaseUrl: null, supabaseServiceKey: null,
+  allowedOrigins: ['http://localhost'], cookieDomain: null, supabaseUrl: null, supabaseServiceKey: null, pvpSupabaseUrl: null, pvpSupabaseServiceKey: null,
   databaseUrl: '', databaseSsl: 'disable', databaseCaFile: null,
   discordClientId: 'cid', discordClientSecret: 'secret', discordGuildId: 'g1',
   discordAllowedRoleIds: ['R1'], sessionTtlDays: 7,

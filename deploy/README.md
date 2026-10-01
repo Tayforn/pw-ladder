@@ -14,7 +14,8 @@ install -d -o root -g root -m 755 /srv/ladder-api
 install -d -o root -g ladder -m 750 /etc/ladder-api
 
 # env: скопіювати server/.env.example у /etc/ladder-api/env і вписати
-# DATABASE_URL (з паролем) та DISCORD_CLIENT_SECRET. Права — root:ladder 640.
+# DATABASE_URL (з паролем) та DISCORD_CLIENT_SECRET; для заявок сайту турнірів —
+# PVP_SUPABASE_URL і PVP_SUPABASE_SERVICE_KEY (див. нижче). Права — root:ladder 640.
 install -o root -g ladder -m 640 /dev/null /etc/ladder-api/env
 nano /etc/ladder-api/env
 
@@ -30,14 +31,78 @@ Discord Developer Portal → OAuth2 → Redirects: додати рівно
 
 ## Оновлення (кожен деплой)
 
-Збірка йде в GitHub Actions разом із фронтендом; на сервер кладеться новий
-`index.mjs`, далі `systemctl restart ladder-api`. Уручну:
+GitHub Actions (`.github/workflows/deploy.yml`) збирає й викладає **лише
+фронтенд** (статику `dist/`). Бекенд збирається й деплоїться **вручну**:
+`npm run server:build` (потрібне `../pw-pvp` на задеплоєному коміті — див.
+нижче), на сервер кладеться новий `index.mjs`, далі `systemctl restart ladder-api`:
 
 ```bash
 npm run server:build
 scp -i ~/.ssh/hetzner_thunderpw server/dist/index.mjs root@89.167.1.191:/srv/ladder-api/index.mjs
 ssh thunderpw 'systemctl restart ladder-api && sleep 1 && curl -fsS localhost:3001/api/health'
 ```
+
+## Збірка потребує ../pw-pvp
+
+Прийом заявок на фул-рандом сайту турнірів (`POST /api/pvp/registrations`,
+`server/src/pvpRegister.ts`) рахує скор заявки моделлю ляльки з репо pw-pvp:
+`npm run server:build` (`server/tools/build.mjs`) вбудовує в бандл
+`../pw-pvp/src/server/scorer.ts` разом із каталогами речей (JSON, ~3 МБ бандла).
+Тому перед збіркою:
+
+- репо pw-pvp лежить поруч (`D:\pw-pvp` ↔ `D:\pw-ladder`) і стоїть на
+  **актуальному коміті** — тому, що задеплоєно на pvp.thunderpw.fun (`git -C
+  ../pw-pvp pull`), інакше сервер рахуватиме заявки не тією моделлю, що браузер
+  і адмінка;
+- збірка друкує, яким комітом pw-pvp рахуватиме сервер (`скорер pw-pvp@…`),
+  той самий підпис пишеться в `item_breakdown.scorer` кожної заявки;
+  `-dirty` — у `../pw-pvp/src` були незакомічені зміни (так не деплоїти).
+
+Після оновлення моделі ляльки в pw-pvp бекенд треба перезібрати й задеплоїти.
+Typecheck і тести сервера (`npm run server:typecheck`, `npm test`) теж ідуть у
+файли pw-pvp — там мають бути встановлені залежності (`npm ci` у ../pw-pvp).
+
+Змінні середовища для цього ендпоінта (у `/etc/ladder-api/env`, ключ — лише
+на сервері): `PVP_SUPABASE_URL` (URL проєкту Supabase сайту турнірів) і
+`PVP_SUPABASE_SERVICE_KEY` (service_role-ключ того проєкту). Без них ендпоінт
+відповідає `503 not_configured`, а сайт подає заявку напряму, як раніше.
+
+Тим самим service-ключем бекенд підписує свої заявки збереженим персонажем
+(`item_breakdown.sig`, HMAC): правило «один персонаж — одна жива заявка на
+турнір» рахує лише підписані рядки, тож рядок, вставлений напряму анонімним
+ключем (до 0034), справжнього власника не блокує. Після заміни ключа старі
+підписи перестають збігатися — на відкритих турнірах персонаж зможе подати ще
+одну заявку (адмін побачить дубль). `item_breakdown.nonce` — мітка спроби з
+браузера: після тайм-ауту сайт упізнає за нею свою щойно записану заявку.
+
+### Увімкнення прийому заявок бекендом — строго в такому порядку
+
+1. **env**: вписати `PVP_SUPABASE_URL` і `PVP_SUPABASE_SERVICE_KEY` у
+   `/etc/ladder-api/env` (root:ladder 640, без лапок).
+2. **деплой**: сайт pw-pvp із поданням заявки через бекенд
+   (`src/data/registerApi.ts`) уже задеплоєно; `git -C ../pw-pvp pull` до цього
+   коміту, `npm run server:build` (у підписі скорера не має бути `-dirty`),
+   залити `index.mjs` і `systemctl restart ladder-api` — як в «Оновленні» вище.
+3. **тестова заявка**: подати з сайту заявку на відкритий фул-рандом і
+   перевірити в Supabase pvp, що її порахував сервер —
+   `select item_breakdown->>'server', item_breakdown->>'scorer' from registrations order by created_at desc limit 1`
+   дає `true` і `pw-pvp@<коміт>`. Не так (порожньо) — заявка пішла запасним
+   шляхом; причина — у `journalctl -u ladder-api` (рядки `pvp: база турнірів …`
+   — 502 від Supabase pvp: URL чи ключ); таких рядків немає — бекенд відповів
+   503, тобто змінні з env не підхопились.
+4. **лише тепер** — міграцію pw-pvp `0034_server_registrations.sql`
+   (прямий insert на фул-рандом і заявки з `character_id` — тільки бекенд). Без
+   працюючого бекенда після неї заявки на фул-рандом зупиняться; відкат — у
+   шапці міграції.
+
+## Логи
+
+Fastify пише лог рівня `info` і вище (JSON-рядки) у stdout → `journalctl -u
+ladder-api`: старт і зупинка, 500 (з маршрутом і стеком), 502 upstream від бази
+турнірів (що робили, HTTP-статус, код і текст PostgREST), збої входу через
+Discord. Помилки клієнта (400/413/415 від самого Fastify) — без запису. Ключі,
+cookie й заголовки запитів у лог не потрапляють; рядків на кожен запит немає
+(`disableRequestLogging`).
 
 ## Caddy
 

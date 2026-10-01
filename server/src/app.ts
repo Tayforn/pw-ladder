@@ -17,6 +17,7 @@ import {
   type PlayerRow,
 } from './sessions';
 import { registerPvpRoutes } from './pvp';
+import { createPvpSupabaseStore, registerPvpRegistrationRoutes, type PvpStore } from './pvpRegister';
 import { answerChallenge, cryptoRandom, doAttempt, getActiveRun, loadRunSettings, resetRun, startRun, submitRun, type Rng } from './runs';
 import type {
   ApiErrorBody, AttemptRequest, BoardEntry, ChallengeAnswer, LadderView, Me, TalanEntry,
@@ -29,6 +30,16 @@ export interface AppDeps {
   discord: DiscordClient;
   now?: () => number;
   rng?: Rng;
+  /** База сайту турнірів для прийому заявок; без неї — з конфігу (PVP_SUPABASE_*),
+   * немає й там — POST /api/pvp/registrations відповідає 503. У тестах — заглушка. */
+  pvpStore?: PvpStore | null;
+  /** Секрет підпису заявок (тести); у проді — PVP_SUPABASE_SERVICE_KEY. */
+  pvpSignKey?: string;
+  /** Лог Fastify (pino, JSON-рядок на подію): за замовчуванням рівень warn у stdout, звідки
+   * systemd кладе його в journalctl — 500, 502 upstream, збої входу. info (кожен запит з
+   * URL) не пишемо. Стандартний серіалізатор req заголовків (cookie, apikey) не містить.
+   * У тестах — свій stream (збирач рядків) або level 'silent'. */
+  log?: { level?: string; stream?: { write(line: string): void } };
 }
 
 const STATE_TTL_S = 600;
@@ -44,7 +55,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const { config, db, discord } = deps;
   const now = deps.now ?? Date.now;
   const rng = deps.rng ?? cryptoRandom;
-  const app = Fastify({ trustProxy: true, bodyLimit: 64 * 1024 });
+  const app = Fastify({
+    trustProxy: true,
+    bodyLimit: 64 * 1024,
+    // info — старт і зупинка (index.ts) теж у journalctl; рядків на кожен запит немає
+    // (disableRequestLogging), тож лог — лише події й помилки.
+    logger: { level: deps.log?.level ?? 'info', ...(deps.log?.stream ? { stream: deps.log.stream } : {}) },
+    disableRequestLogging: true,
+  });
 
   app.register(cookie);
 
@@ -91,17 +109,22 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     throw new ApiError('bad_origin', 'Некоректне джерело запиту.');
   }
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof ApiError) {
       const body: ApiErrorBody = { error: err.code, message: err.message };
       if (err.retryAfterMs != null) body.retryAfterMs = err.retryAfterMs;
       if (err.challenge) body.challenge = err.challenge;
       return reply.status(err.status).send(body);
     }
-    if ((err as { statusCode?: number }).statusCode === 400) {
-      return reply.status(400).send({ error: 'bad_request', message: 'Некоректний запит.' } satisfies ApiErrorBody);
+    // 4xx самого Fastify (400 — тіло не JSON, 413 — завеликий запит, 415 — не той тип) —
+    // помилка клієнта, не збій сервера: той самий статус, без стека в лозі.
+    const sc = (err as { statusCode?: unknown }).statusCode;
+    if (typeof sc === 'number' && sc >= 400 && sc < 500) {
+      const message = sc === 413 ? 'Запит завеликий.' : sc === 415 ? 'Непідтримуваний тип запиту — потрібен JSON.' : 'Некоректний запит.';
+      return reply.status(sc).send({ error: 'bad_request', message } satisfies ApiErrorBody);
     }
-    app.log.error(err);
+    // Маршрут — шаблоном (без query: у /api/auth/callback там код OAuth).
+    app.log.error({ err, route: `${req.method} ${req.routeOptions?.url ?? '?'}` }, 'внутрішня помилка — 500');
     return reply.status(500).send({ error: 'internal', message: 'Внутрішня помилка.' } satisfies ApiErrorBody);
   });
 
@@ -212,6 +235,19 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   // ---- Персонажі pvp.thunderpw.fun (лялька) ----
   registerPvpRoutes(app, { db, now, requirePlayer, assertOrigin });
+
+  // ---- Заявки на фул-рандом pvp.thunderpw.fun: скор рахує сервер ----
+  const pvpStore =
+    deps.pvpStore !== undefined
+      ? deps.pvpStore
+      : config.pvpSupabaseUrl && config.pvpSupabaseServiceKey
+        ? createPvpSupabaseStore(config.pvpSupabaseUrl, config.pvpSupabaseServiceKey)
+        : null;
+  registerPvpRegistrationRoutes(app, {
+    db, now, store: pvpStore, requirePlayer, assertOrigin,
+    // Підпис заявок — секретом сервера (service-ключ бази турнірів); без нього прийом і так 503.
+    signKey: deps.pvpSignKey ?? config.pvpSupabaseServiceKey ?? 'pvp-dev-sign-key',
+  });
 
   // ---- Гейтоване читання даних гільдії (guild.thunderpw.fun) ----
   // Проксі до Supabase REST лише для GET і лише з валідною Discord-сесією

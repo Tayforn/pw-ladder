@@ -20,6 +20,10 @@ export interface Config {
   /** Supabase для гейтованого проксі читання (guild): URL + service-ключ. */
   supabaseUrl: string | null;
   supabaseServiceKey: string | null;
+  /** Supabase сайту турнірів (pvp) — прийом заявок бекендом (POST /api/pvp/registrations):
+   * URL проєкту + service-ключ. Без них ендпоінт відповідає 503 not_configured. */
+  pvpSupabaseUrl: string | null;
+  pvpSupabaseServiceKey: string | null;
   databaseUrl: string;
   databaseSsl: DatabaseSsl;
   databaseCaFile: string | null;
@@ -89,6 +93,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cookieSecure: origin.protocol === 'https:',
     supabaseUrl: env.SUPABASE_URL?.trim().replace(/\/+$/, '') || null,
     supabaseServiceKey: env.SUPABASE_SERVICE_KEY?.trim() || null,
+    pvpSupabaseUrl: env.PVP_SUPABASE_URL?.trim().replace(/\/+$/, '') || null,
+    pvpSupabaseServiceKey: env.PVP_SUPABASE_SERVICE_KEY?.trim() || null,
     databaseUrl,
     databaseSsl: ssl,
     databaseCaFile: env.DATABASE_CA_FILE?.trim() || null,

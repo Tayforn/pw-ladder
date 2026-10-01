@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "server:typecheck": "tsc -p server/tsconfig.json",
     "server:dev": "node --import tsx server/src/index.ts",
-    "server:build": "esbuild server/src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=server/dist/index.mjs --external:pg-native --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
+    "server:build": "node server/tools/build.mjs",
     "test": "vitest run"
   },
   "devDependencies": {

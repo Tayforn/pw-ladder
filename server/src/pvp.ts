@@ -31,10 +31,10 @@ const MAX_DEPTH = 8;
 /** Не частіше одного запису на гравця за цей час — збереження явне, кнопкою. */
 const WRITE_GAP_MS = 1000;
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Керівні символи й одинокі сурогати ламають показ і пошук; редактор їх вирізає (cleanText).
 // eslint-disable-next-line no-control-regex
-const BAD_CHARS_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+export const BAD_CHARS_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 export interface CharacterSummary {

@@ -18,7 +18,12 @@ const STATUS: Record<ApiErrorCode, number> = {
   bad_origin: 403,
   rate_limited: 429,
   conflict: 409,
+  registration_closed: 409,
+  duplicate_nickname: 409,
+  already_registered: 409,
   internal: 500,
+  upstream: 502,
+  not_configured: 503,
 };
 
 export class ApiError extends Error {

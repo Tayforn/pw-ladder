@@ -11,7 +11,7 @@ import { SCHEMA_SQL } from './schema';
 const ORIGIN = 'http://localhost';
 const CONFIG: Config = {
   host: '127.0.0.1', port: 0, publicOrigin: ORIGIN, cookieSecure: false,
-  allowedOrigins: [ORIGIN], cookieDomain: null, supabaseUrl: null, supabaseServiceKey: null,
+  allowedOrigins: [ORIGIN], cookieDomain: null, supabaseUrl: null, supabaseServiceKey: null, pvpSupabaseUrl: null, pvpSupabaseServiceKey: null,
   databaseUrl: '', databaseSsl: 'disable', databaseCaFile: null,
   discordClientId: 'cid', discordClientSecret: 'secret', discordGuildId: 'g1',
   discordAllowedRoleIds: ['R1'], sessionTtlDays: 7,

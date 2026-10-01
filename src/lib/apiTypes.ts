@@ -169,6 +169,12 @@ export type ApiErrorCode =
   | 'bad_origin'
   | 'rate_limited'
   | 'conflict'
+  // POST /api/pvp/registrations (заявка на фул-рандом сайту турнірів):
+  | 'registration_closed' // 409 — реєстрацію закрито або турнір уже пройшов
+  | 'duplicate_nickname' // 409 — такий нік уже є серед заявок турніру
+  | 'already_registered' // 409 — цей збережений персонаж уже має живу заявку на турнір
+  | 'upstream' // 502 — база турнірів (Supabase pvp) не відповіла чи відмовила
+  | 'not_configured' // 503 — на сервері немає PVP_SUPABASE_URL / PVP_SUPABASE_SERVICE_KEY
   | 'internal';
 
 export interface ApiErrorBody {

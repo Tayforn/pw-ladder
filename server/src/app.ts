@@ -5,7 +5,7 @@
 // Усе під /api — Caddy віддає статику фронтенду на / і проксить /api сюди.
 // =========================================================
 
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import Fastify, { LogController, type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import type { Config } from './config';
 import type { Db } from './db';
@@ -59,9 +59,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     trustProxy: true,
     bodyLimit: 64 * 1024,
     // info — старт і зупинка (index.ts) теж у journalctl; рядків на кожен запит немає
-    // (disableRequestLogging), тож лог — лише події й помилки.
+    // (LogController з disableRequestLogging), тож лог — лише події й помилки.
     logger: { level: deps.log?.level ?? 'info', ...(deps.log?.stream ? { stream: deps.log.stream } : {}) },
-    disableRequestLogging: true,
+    logController: new LogController({ disableRequestLogging: true }),
   });
 
   app.register(cookie);

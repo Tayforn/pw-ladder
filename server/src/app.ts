@@ -17,7 +17,8 @@ import {
   type PlayerRow,
 } from './sessions';
 import { registerPvpRoutes } from './pvp';
-import { createPvpSupabaseStore, registerPvpRegistrationRoutes, type PvpStore } from './pvpRegister';
+import { createPvpRest, createPvpSupabaseStore, registerPvpRegistrationRoutes, type PvpStore } from './pvpRegister';
+import { createPvpBetsStore, registerPvpBetRoutes, type PvpBetsStore } from './pvpBets';
 import { answerChallenge, cryptoRandom, doAttempt, getActiveRun, loadRunSettings, resetRun, startRun, submitRun, type Rng } from './runs';
 import type {
   ApiErrorBody, AttemptRequest, BoardEntry, ChallengeAnswer, LadderView, Me, TalanEntry,
@@ -33,6 +34,8 @@ export interface AppDeps {
   /** База сайту турнірів для прийому заявок; без неї — з конфігу (PVP_SUPABASE_*),
    * немає й там — POST /api/pvp/registrations відповідає 503. У тестах — заглушка. */
   pvpStore?: PvpStore | null;
+  /** Ставки в базі сайту турнірів; без неї — з конфігу (PVP_SUPABASE_*), немає й там — 503. */
+  pvpBetsStore?: PvpBetsStore | null;
   /** Секрет підпису заявок (тести); у проді — PVP_SUPABASE_SERVICE_KEY. */
   pvpSignKey?: string;
   /** Лог Fastify (pino, JSON-рядок на подію): за замовчуванням рівень warn у stdout, звідки
@@ -261,6 +264,19 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   registerPvpRegistrationRoutes(app, {
     db, now, store: pvpStore, requirePlayer, sessionPlayer, assertOrigin,
     // Підпис заявок — секретом сервера (service-ключ бази турнірів); без нього прийом і так 503.
+    signKey: deps.pvpSignKey ?? config.pvpSupabaseServiceKey ?? 'pvp-dev-sign-key',
+  });
+
+  // ---- Ставки в юанях pvp.thunderpw.fun: лише з Discord-сесією ----
+  const pvpBetsStore =
+    deps.pvpBetsStore !== undefined
+      ? deps.pvpBetsStore
+      : config.pvpSupabaseUrl && config.pvpSupabaseServiceKey
+        ? createPvpBetsStore(createPvpRest(config.pvpSupabaseUrl, config.pvpSupabaseServiceKey))
+        : null;
+  registerPvpBetRoutes(app, {
+    now, store: pvpBetsStore, requirePlayer, assertOrigin,
+    // та сама мітка акаунта, що в заявці (account_tag): за нею place_bet впізнає учасника
     signKey: deps.pvpSignKey ?? config.pvpSupabaseServiceKey ?? 'pvp-dev-sign-key',
   });
 

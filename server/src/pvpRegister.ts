@@ -98,11 +98,14 @@ const CHARACTER_ROWS_MAX = 20;
 /** Літерал для ilike у PostgREST: «%», «_», «\» і «*» — символи, а не шаблон (як likePattern у pw-pvp). */
 const likeLiteral = (s: string): string => s.replace(/[\\%_*]/g, (c) => '\\' + c);
 
-export function createPvpSupabaseStore(baseUrl: string, serviceKey: string, fetchImpl: typeof fetch = fetch): PvpStore {
+/** Запит до PostgREST бази турнірів service-ключем (path — після /rest/v1/); відмова — PvpDbError. */
+export type PvpRestCall = <T>(path: string, init?: { method?: string; body?: unknown; prefer?: string }) => Promise<T>;
+
+export function createPvpRest(baseUrl: string, serviceKey: string, fetchImpl: typeof fetch = fetch): PvpRestCall {
   const rest = `${baseUrl.replace(/\/+$/, '')}/rest/v1`;
   const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, Accept: 'application/json' };
 
-  async function call<T>(path: string, init: { method?: string; body?: unknown; prefer?: string } = {}): Promise<T> {
+  return async function call<T>(path: string, init: { method?: string; body?: unknown; prefer?: string } = {}): Promise<T> {
     let res: Response;
     try {
       res = await fetchImpl(`${rest}/${path}`, {
@@ -130,8 +133,12 @@ export function createPvpSupabaseStore(baseUrl: string, serviceKey: string, fetc
       throw new PvpDbError(res.status, typeof err.code === 'string' ? err.code : null, typeof err.message === 'string' ? err.message : `HTTP ${res.status}`);
     }
     return json as T;
-  }
-  const first = <T>(rows: T[] | null): T | null => (Array.isArray(rows) && rows.length ? rows[0] : null);
+  };
+}
+
+export function createPvpSupabaseStore(baseUrl: string, serviceKey: string, fetchImpl: typeof fetch = fetch): PvpStore {
+  const call = createPvpRest(baseUrl, serviceKey, fetchImpl);
+  const first =<T>(rows: T[] | null): T | null => (Array.isArray(rows) && rows.length ? rows[0] : null);
 
   return {
     async tournament(id) {

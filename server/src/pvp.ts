@@ -10,6 +10,12 @@
 // Конфлікти: PUT несе baseRevision — ревізію, яку редактор відкрив. Якщо
 // з іншого пристрою вже зберегли новішу, запис не проходить (409), і
 // редактор пропонує завантажити серверну чи перезаписати свідомо.
+//
+// «Мої соклани» (/api/pvp/clan/characters): персонажі ІНШИХ учасників клану,
+// лише читання. Сесію бекенд видає тільки учаснику сервера клану з дозволеною
+// роллю, тож «увійшов» = «свій»; чужу ляльку можна дивитись і приміряти на
+// ній речі в редакторі (зміни живуть у вкладці), а зберегти — лише як копію
+// в свій профіль звичайним POST /api/pvp/characters.
 // =========================================================
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -56,6 +62,21 @@ export interface CharacterRecord {
   revision: number;
   updatedAt: string;
   doc: unknown;
+}
+
+/** Власник персонажа в «Моїх сокланах» — нік з Discord-сервера клану (синхронізується при вході). */
+export interface CharacterOwner {
+  id: string;
+  nickname: string;
+  avatarUrl: string | null;
+}
+
+export interface ClanCharacterSummary extends CharacterSummary {
+  owner: CharacterOwner;
+}
+
+export interface ClanCharacterRecord extends CharacterRecord {
+  owner: CharacterOwner;
 }
 
 interface DocHead {
@@ -119,6 +140,11 @@ export function checkCharacterDoc(raw: unknown): DocHead {
 const SUMMARY_COLS = `id, name, cls, level, revision, updated_at as "updatedAt",
   jsonb_array_length(doc->'items')::int as items, jsonb_array_length(doc->'sets')::int as sets`;
 const RECORD_COLS = `id, name, cls, level, revision, updated_at as "updatedAt", doc`;
+/** Ті самі колонки з псевдонімом c (join із власником) плюс власник одним jsonb-полем. */
+const OWNER_COL = `jsonb_build_object('id', p.id, 'nickname', p.nickname, 'avatarUrl', p.avatar_url) as owner`;
+const CLAN_SUMMARY_COLS = `c.id, c.name, c.cls, c.level, c.revision, c.updated_at as "updatedAt",
+  jsonb_array_length(c.doc->'items')::int as items, jsonb_array_length(c.doc->'sets')::int as sets, ${OWNER_COL}`;
+const CLAN_RECORD_COLS = `c.id, c.name, c.cls, c.level, c.revision, c.updated_at as "updatedAt", c.doc, ${OWNER_COL}`;
 
 function isUniqueViolation(e: unknown): boolean {
   return !!e && typeof e === 'object' && (e as { code?: string }).code === '23505';
@@ -170,6 +196,34 @@ export function registerPvpRoutes(app: FastifyInstance, deps: PvpDeps): void {
     const { rows } = await db.query<CharacterRecord>(
       `select ${RECORD_COLS} from pvp_characters where id = $1 and player_id = $2 and archived_at is null`,
       [id, p.id],
+    );
+    if (!rows[0]) throw new ApiError('not_found', 'Персонажа не знайдено.');
+    return rows[0];
+  });
+
+  // ---- «Мої соклани»: персонажі інших учасників клану, лише читання ----
+  // Забанений у ладдері не бачить списку (requirePlayer) і сам у ньому не показується.
+
+  app.get('/api/pvp/clan/characters', async (req): Promise<{ characters: ClanCharacterSummary[] }> => {
+    const p = await requirePlayer(req);
+    const { rows } = await db.query<ClanCharacterSummary>(
+      `select ${CLAN_SUMMARY_COLS}
+         from pvp_characters c join ladder_players p on p.id = c.player_id
+        where c.player_id <> $1 and c.archived_at is null and not p.banned
+        order by lower(p.nickname), p.id, c.updated_at desc`,
+      [p.id],
+    );
+    return { characters: rows };
+  });
+
+  app.get('/api/pvp/clan/characters/:id', async (req): Promise<ClanCharacterRecord> => {
+    await requirePlayer(req);
+    const id = charId(req);
+    const { rows } = await db.query<ClanCharacterRecord>(
+      `select ${CLAN_RECORD_COLS}
+         from pvp_characters c join ladder_players p on p.id = c.player_id
+        where c.id = $1 and c.archived_at is null and not p.banned`,
+      [id],
     );
     if (!rows[0]) throw new ApiError('not_found', 'Персонажа не знайдено.');
     return rows[0];

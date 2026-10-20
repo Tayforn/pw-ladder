@@ -123,6 +123,35 @@ describe('персонажі pvp', () => {
     await app.close();
   });
 
+  it('«Мої соклани»: чужі персонажі з власником, свої й архівні — ні; без входу — 401', async () => {
+    const app = await makeApp();
+    const a = await login(app, member('u1', 'Alice'));
+    const b = await login(app, member('u2', 'Bob'));
+    const mine = (await call(app, a, 'POST', '/api/pvp/characters', { doc: doc({ name: 'Моя' }) })).json();
+    const bobs = (await call(app, b, 'POST', '/api/pvp/characters', { doc: doc({ name: 'Бобова', cls: 'by' }) })).json();
+    const gone = (await call(app, b, 'POST', '/api/pvp/characters', { doc: doc({ name: 'Архівна' }) })).json();
+    await call(app, b, 'DELETE', `/api/pvp/characters/${gone.id}`);
+
+    expect((await call(app, null, 'GET', '/api/pvp/clan/characters')).statusCode).toBe(401);
+    expect((await call(app, null, 'GET', `/api/pvp/clan/characters/${bobs.id}`)).statusCode).toBe(401);
+
+    const list = (await call(app, a, 'GET', '/api/pvp/clan/characters')).json();
+    expect(list.characters).toEqual([
+      expect.objectContaining({ id: bobs.id, name: 'Бобова', cls: 'by', items: 1, sets: 0, owner: { id: expect.any(String), nickname: 'Bob', avatarUrl: null } }),
+    ]);
+    expect(list.characters.map((c: { id: string }) => c.id)).not.toContain(mine.id);
+
+    const rec = await call(app, a, 'GET', `/api/pvp/clan/characters/${bobs.id}`);
+    expect(rec.statusCode).toBe(200);
+    expect(rec.json()).toMatchObject({ id: bobs.id, name: 'Бобова', revision: 1, owner: { nickname: 'Bob' } });
+    expect(rec.json().doc.items).toHaveLength(1);
+    // архівний і кривий id — 404; чужий звичайний маршрут як був — 404
+    expect((await call(app, a, 'GET', `/api/pvp/clan/characters/${gone.id}`)).statusCode).toBe(404);
+    expect((await call(app, a, 'GET', '/api/pvp/clan/characters/not-a-uuid')).statusCode).toBe(404);
+    expect((await call(app, a, 'GET', `/api/pvp/characters/${bobs.id}`)).statusCode).toBe(404);
+    await app.close();
+  });
+
   it('імʼя унікальне без регістру; після архіву — вільне', async () => {
     const app = await makeApp();
     const s = await login(app, member('u1', 'Tester'));
